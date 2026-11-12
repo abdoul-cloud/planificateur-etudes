@@ -58,6 +58,45 @@ def _depuis_sql(type_champ, valeur):
     return valeur
 
 
+def _en_json(valeur):
+    """Convertit récursivement les heures en texte pour json.dumps."""
+    if isinstance(valeur, dict):
+        return {str(k): _en_json(v) for k, v in valeur.items()}
+    if isinstance(valeur, list):
+        return [_en_json(v) for v in valeur]
+    return _vers_sql(valeur)
+
+
+def _preferences_depuis(donnees: dict) -> m.Preferences:
+    h = time.fromisoformat
+
+    def plage(d: dict) -> m.Plage:
+        return m.Plage(h(d["debut"]), h(d["fin"]), d.get("nom", ""))
+
+    def hebdo(d: dict) -> m.PlageHebdo:
+        return m.PlageHebdo(d["jours"], h(d["debut"]), h(d["fin"]))
+
+    def reglage(d: dict) -> m.ReglageJour:
+        return m.ReglageJour(
+            d["travaille"], h(d["debut"]), h(d["fin"]), d["max_minutes"],
+            [plage(p) for p in d["pauses"]],
+        )
+
+    connus = {f.name for f in fields(m.Preferences)}
+    d = {c: v for c, v in donnees.items() if c in connus}  # ignore les anciens champs
+    for cle in ("debut_journee", "fin_journee"):
+        if cle in d:
+            d[cle] = h(d[cle])
+    if "pauses_quotidiennes" in d:
+        d["pauses_quotidiennes"] = [plage(p) for p in d["pauses_quotidiennes"]]
+    if "reglages_jour" in d:
+        d["reglages_jour"] = {int(j): reglage(r) for j, r in d["reglages_jour"].items()}
+    for cle in ("plages_preferees", "plages_evitees"):
+        if cle in d:
+            d[cle] = [hebdo(p) for p in d[cle]]
+    return m.Preferences(**d)
+
+
 class Depot(Generic[T]):
     """Création, lecture, modification et suppression pour une table."""
 
@@ -159,16 +198,10 @@ class Base:
         ).fetchone()
         if ligne is None:
             return m.Preferences()
-        types = get_type_hints(m.Preferences)
-        donnees = {
-            c: v if isinstance(v, list) else _depuis_sql(types[c], v)
-            for c, v in json.loads(ligne[0]).items()
-            if c in types
-        }
-        return m.Preferences(**donnees)
+        return _preferences_depuis(json.loads(ligne[0]))
 
     def enregistrer_preferences(self, preferences: m.Preferences) -> None:
-        donnees = {c: _vers_sql(v) for c, v in asdict(preferences).items()}
+        donnees = _en_json(asdict(preferences))
         with self._cx:
             self._cx.execute(
                 "INSERT INTO parametres (cle, valeur) VALUES ('preferences', ?) "

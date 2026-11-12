@@ -14,10 +14,7 @@ DIMANCHE = date(2026, 11, 22)
 PREFS = m.Preferences(
     debut_journee=time(8),
     fin_journee=time(21),
-    dejeuner_debut=None,
-    dejeuner_fin=None,
-    diner_debut=None,
-    diner_fin=None,
+    pauses_quotidiennes=[],
 )
 
 
@@ -96,7 +93,7 @@ def test_creneau_trop_court_ecarte():
 
 
 def test_jour_de_repos_exclu():
-    prefs = m.Preferences(jours_repos=[6])
+    prefs = m.Preferences(reglages_jour={6: m.ReglageJour(travaille=False)})
     assert creneaux_libres(DIMANCHE, DIMANCHE, prefs) == []
 
 

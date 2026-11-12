@@ -214,20 +214,68 @@ class Seance:
 
 
 @dataclass
+class Plage:
+    """Plage horaire dans une journée (pause, repas, repos…)."""
+
+    debut: time
+    fin: time
+    nom: str = ""
+
+    def __post_init__(self) -> None:
+        _ordre(self.debut, self.fin)
+
+
+def _pauses_par_defaut() -> list[Plage]:
+    # Le déjeuner inclut la petite pause qui suit le repas.
+    return [Plage(time(12), time(13), "Déjeuner"), Plage(time(18), time(19), "Dîner")]
+
+
+@dataclass
+class ReglageJour:
+    """Réglage d'un jour de la semaine, qui remplace le réglage général."""
+
+    travaille: bool = True  # False = jour de repos complet
+    debut: time = time(7)
+    fin: time = time(23)
+    max_minutes: int = 360
+    pauses: list[Plage] = field(default_factory=_pauses_par_defaut)
+
+    def __post_init__(self) -> None:
+        _ordre(self.debut, self.fin)
+        if self.max_minutes < 0:
+            raise ValueError("La limite de travail du jour ne peut pas être négative")
+
+
+@dataclass
+class PlageHebdo:
+    """Plage répétée certains jours de la semaine (0 = lundi)."""
+
+    jours: list[int]
+    debut: time
+    fin: time
+
+    def __post_init__(self) -> None:
+        _ordre(self.debut, self.fin)
+        if not self.jours or any(not 0 <= j <= 6 for j in self.jours):
+            raise ValueError("Les jours vont de 0 (lundi) à 6 (dimanche)")
+
+
+@dataclass
 class Preferences:
     duree_min_seance: int = 45  # minutes
     duree_max_seance: int = 90
-    pause_min: int = 10
-    max_minutes_jour: int = 360  # 6 h de travail personnel par jour
+    pause_min: int = 10  # entre deux séances
+    # Réglage général, valable pour tout jour sans réglage particulier.
     debut_journee: time = time(7, 0)
     fin_journee: time = time(23, 0)
-    # Repas bloqués chaque jour (None = désactivé). Le déjeuner inclut la
-    # petite pause qui suit le repas.
-    dejeuner_debut: time | None = time(12, 0)
-    dejeuner_fin: time | None = time(13, 0)
-    diner_debut: time | None = time(18, 0)
-    diner_fin: time | None = time(19, 0)
-    jours_repos: list[int] = field(default_factory=list)  # 0 = lundi
+    max_minutes_jour: int = 360  # 6 h de travail personnel par jour
+    pauses_quotidiennes: list[Plage] = field(default_factory=_pauses_par_defaut)
+    # Réglages particuliers par jour de la semaine (0 = lundi).
+    reglages_jour: dict[int, ReglageJour] = field(default_factory=dict)
+    # Le moteur choisit d'abord les plages préférées et n'utilise les plages
+    # évitées qu'en dernier recours.
+    plages_preferees: list[PlageHebdo] = field(default_factory=list)
+    plages_evitees: list[PlageHebdo] = field(default_factory=list)
     marge_echeance_heures: int = 12
     horizon_semaines: int = 3
 
@@ -237,18 +285,16 @@ class Preferences:
         _ordre(self.debut_journee, self.fin_journee)
         if self.pause_min < 0 or self.max_minutes_jour <= 0:
             raise ValueError("Pause ou limite quotidienne invalide")
-        for debut, fin in self.repas:
-            _ordre(debut, fin)
-        if (self.dejeuner_debut is None) != (self.dejeuner_fin is None) or (
-            self.diner_debut is None
-        ) != (self.diner_fin is None):
-            raise ValueError("Un repas doit avoir un début et une fin")
+        if any(not 0 <= j <= 6 for j in self.reglages_jour):
+            raise ValueError("Les jours vont de 0 (lundi) à 6 (dimanche)")
 
-    @property
-    def repas(self) -> list[tuple[time, time]]:
-        """Plages de repas actives, dans l'ordre de la journée."""
-        plages = [
-            (self.dejeuner_debut, self.dejeuner_fin),
-            (self.diner_debut, self.diner_fin),
-        ]
-        return [(d, f) for d, f in plages if d is not None and f is not None]
+    def jour(self, jour_semaine: int) -> ReglageJour:
+        """Réglage effectif d'un jour : particulier s'il existe, sinon général."""
+        if jour_semaine in self.reglages_jour:
+            return self.reglages_jour[jour_semaine]
+        return ReglageJour(
+            debut=self.debut_journee,
+            fin=self.fin_journee,
+            max_minutes=self.max_minutes_jour,
+            pauses=list(self.pauses_quotidiennes),
+        )

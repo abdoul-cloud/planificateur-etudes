@@ -113,7 +113,11 @@ def test_supprimer_une_epreuve_supprime_ses_seances(base):
 
 def test_preferences_par_defaut_puis_enregistrees(base):
     assert base.preferences() == m.Preferences()
-    prefs = m.Preferences(max_minutes_jour=300, jours_repos=[6], fin_journee=time(22))
+    prefs = m.Preferences(
+        max_minutes_jour=300,
+        fin_journee=time(22),
+        reglages_jour={6: m.ReglageJour(travaille=False)},
+    )
     base.enregistrer_preferences(prefs)
     assert base.preferences() == prefs
 

@@ -127,30 +127,32 @@ def creneaux_libres(
 ) -> list[Intervalle]:
     """Créneaux utilisables pour des séances, du `du` au `au` inclus.
 
-    - Les repas définis dans les préférences sont bloqués chaque jour.
+    - Chaque jour suit son réglage (heures, pauses, jour de repos).
     - `seances` : séances déjà placées à préserver (terminées, verrouillées…).
     - `a_partir_de` : rien n'est proposé avant cet instant (« maintenant »).
     - Les créneaux plus courts que la durée minimale de séance sont écartés.
     """
-    repas = [
-        Intervalle(datetime.combine(jour, debut), datetime.combine(jour, fin))
-        for jour in _jours(du, au)
-        for debut, fin in preferences.repas
-    ]
-    occupes = fusionner(
-        [*periodes_occupees(du, au, activites, exceptions, epreuves, seances), *repas]
-    )
+    occupes = periodes_occupees(du, au, activites, exceptions, epreuves, seances)
     libres: list[Intervalle] = []
 
     for jour in _jours(du, au):
-        if jour.weekday() in preferences.jours_repos:
+        reglage = preferences.jour(jour.weekday())
+        if not reglage.travaille or reglage.max_minutes == 0:
             continue
-        curseur = datetime.combine(jour, preferences.debut_journee)
-        fin_journee = datetime.combine(jour, preferences.fin_journee)
+        curseur = datetime.combine(jour, reglage.debut)
+        fin_journee = datetime.combine(jour, reglage.fin)
         if a_partir_de is not None:
             curseur = max(curseur, a_partir_de)
 
-        bornes = [o for o in occupes if o.fin > curseur and o.debut < fin_journee]
+        pauses = [
+            Intervalle(datetime.combine(jour, p.debut), datetime.combine(jour, p.fin))
+            for p in reglage.pauses
+        ]
+        bornes = [
+            o
+            for o in fusionner([*occupes, *pauses])
+            if o.fin > curseur and o.debut < fin_journee
+        ]
         for occupe in [*bornes, Intervalle(fin_journee, fin_journee)]:
             debut = _arrondir(curseur, vers_le_haut=True)
             fin = _arrondir(min(occupe.debut, fin_journee), vers_le_haut=False)
@@ -159,3 +161,32 @@ def creneaux_libres(
             curseur = max(curseur, occupe.fin)
 
     return libres
+
+
+PREFEREE, NEUTRE, EVITEE = 1, 0, -1
+
+
+def niveau_preference(intervalle: Intervalle, preferences: Preferences) -> int:
+    """Classe une séance possible : évitée, neutre ou préférée.
+
+    Une séance qui touche une plage évitée est évitée, même si elle est aussi
+    dans une plage préférée. Elle n'est préférée que si elle tient entièrement
+    dans une plage préférée.
+    """
+    jour = intervalle.debut.date()
+
+    def plages(liste):
+        for p in liste:
+            if jour.weekday() in p.jours:
+                yield Intervalle(
+                    datetime.combine(jour, p.debut), datetime.combine(jour, p.fin)
+                )
+
+    if any(intervalle.chevauche(p) for p in plages(preferences.plages_evitees)):
+        return EVITEE
+    if any(
+        p.debut <= intervalle.debut and intervalle.fin <= p.fin
+        for p in plages(preferences.plages_preferees)
+    ):
+        return PREFEREE
+    return NEUTRE

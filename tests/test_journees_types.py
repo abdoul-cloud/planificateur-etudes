@@ -64,7 +64,12 @@ def test_aucune_revision_pendant_les_repas():
 
 
 def test_horaires_des_repas_modifiables():
-    prefs = m.Preferences(dejeuner_debut=time(12, 30), dejeuner_fin=time(13, 30))
+    prefs = m.Preferences(
+        pauses_quotidiennes=[
+            m.Plage(time(12, 30), time(13, 30), "Déjeuner"),
+            m.Plage(time(18), time(19), "Dîner"),
+        ]
+    )
     libres = creneaux_libres(LUNDI, LUNDI, prefs, [cours(7, 12), cours(14, 18)])
     # Il ne reste que 30 minutes entre le déjeuner et le cours : trop court.
     assert libres == [Intervalle(h(19), h(23))]
@@ -74,10 +79,15 @@ def test_preferences_avec_repas_survivent_a_l_enregistrement(tmp_path):
     from planificateur.base import Base
 
     base = Base(tmp_path / "prefs.db")
-    prefs = m.Preferences(diner_debut=time(18, 30), diner_fin=time(19, 15))
+    prefs = m.Preferences(
+        pauses_quotidiennes=[
+            m.Plage(time(12), time(13), "Déjeuner"),
+            m.Plage(time(18, 30), time(19, 15), "Dîner"),
+        ]
+    )
     base.enregistrer_preferences(prefs)
     assert base.preferences() == prefs
-    sans_diner = m.Preferences(diner_debut=None, diner_fin=None)
+    sans_diner = m.Preferences(pauses_quotidiennes=[m.Plage(time(12), time(13))])
     base.enregistrer_preferences(sans_diner)
     assert base.preferences() == sans_diner
     base.fermer()
