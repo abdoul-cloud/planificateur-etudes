@@ -9,7 +9,7 @@ dependencies = ["PySide6>=6.6"]
 planificateur = "planificateur.__main__:main"
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "pyinstaller>=6.6", "pillow"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

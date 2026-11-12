@@ -23,11 +23,6 @@ from planificateur.ui.export import exporter_pdf, exporter_png  # noqa: E402
 LUNDI = date(2026, 11, 16)
 
 
-@pytest.fixture(scope="module")
-def application():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
 @pytest.fixture
 def base(tmp_path):
     b = Base(tmp_path / "donnees" / "donnees.db")

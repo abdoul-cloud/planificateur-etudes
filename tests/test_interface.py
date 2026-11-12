@@ -34,11 +34,6 @@ from planificateur.ui.calendrier import PagePlanning  # noqa: E402
 LUNDI = date(2026, 11, 16)
 
 
-@pytest.fixture(scope="module")
-def application():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
 @pytest.fixture
 def base(tmp_path):
     b = Base(tmp_path / "ui.db")

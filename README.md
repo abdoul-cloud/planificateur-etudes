@@ -24,6 +24,17 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .[dev]
 ```
 
+## Installateur Windows
+
+Le fichier `build\installateur\Installer-PlanificateurEtudes-0.1.0.exe` installe l'application sans droits administrateur : raccourci dans le menu Démarrer (et sur le Bureau si on le coche), désinstallation depuis Paramètres > Applications. Il n'a besoin ni de Python ni d'Internet. Les données de `%APPDATA%\PlanificateurEtudes` ne sont jamais supprimées, ni par une mise à jour ni par une désinstallation.
+
+Pour le reconstruire (tests, application autonome, auto-test de l'exécutable, puis installateur) :
+
+```bash
+powershell -ExecutionPolicy Bypass -File packaging/construire.ps1
+```
+
+Outils nécessaires : `pip install -e .[dev]` (PyInstaller, Pillow, pytest) et Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Pour une nouvelle version, changer le numéro dans `pyproject.toml`, `planificateur/__main__.py`, `packaging/version.txt` et `packaging/installateur.iss`.
 ## Tests
 
 ```bash
