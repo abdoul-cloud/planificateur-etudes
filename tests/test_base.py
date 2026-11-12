@@ -140,3 +140,28 @@ def test_preferences_par_defaut_puis_enregistrees(base):
 def test_donnees_invalides_refusees(fabrique):
     with pytest.raises(ValueError):
         fabrique()
+
+
+def test_migration_d_une_base_version_1(tmp_path):
+    from pathlib import Path
+
+    import planificateur.base as module_base
+
+    chemin = tmp_path / "ancienne.db"
+    cx = sqlite3.connect(chemin)
+    cx.executescript(
+        Path(module_base.__file__).with_name("schema.sql").read_text(encoding="utf-8")
+        + "PRAGMA user_version = 1;"
+    )
+    cx.execute("INSERT INTO matieres (nom) VALUES ('Maths')")
+    cx.commit()
+    cx.close()
+
+    b = Base(chemin)
+    assert b.version == VERSION_SCHEMA
+    assert b.matieres.lister()[0].nom == "Maths"  # données conservées
+    epreuve = b.epreuves.ajouter(
+        m.Epreuve(1, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16), minutes_preparation=150)
+    )
+    assert b.epreuves.obtenir(epreuve.id).minutes_preparation == 150
+    b.fermer()

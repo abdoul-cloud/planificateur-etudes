@@ -36,7 +36,7 @@ def _jours(du: date, au: date) -> Iterable[date]:
         yield du + timedelta(days=n)
 
 
-def _arrondir(instant: datetime, vers_le_haut: bool) -> datetime:
+def arrondir_grille(instant: datetime, vers_le_haut: bool) -> datetime:
     base = instant.replace(
         minute=instant.minute - instant.minute % GRILLE_MIN, second=0, microsecond=0
     )
@@ -154,8 +154,8 @@ def creneaux_libres(
             if o.fin > curseur and o.debut < fin_journee
         ]
         for occupe in [*bornes, Intervalle(fin_journee, fin_journee)]:
-            debut = _arrondir(curseur, vers_le_haut=True)
-            fin = _arrondir(min(occupe.debut, fin_journee), vers_le_haut=False)
+            debut = arrondir_grille(curseur, vers_le_haut=True)
+            fin = arrondir_grille(min(occupe.debut, fin_journee), vers_le_haut=False)
             if (fin - debut) >= timedelta(minutes=preferences.duree_min_seance):
                 libres.append(Intervalle(debut, fin))
             curseur = max(curseur, occupe.fin)

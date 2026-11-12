@@ -15,8 +15,14 @@ from . import modeles as m
 
 T = TypeVar("T")
 
-VERSION_SCHEMA = 1
-_SCHEMA = Path(__file__).with_name("schema.sql")
+VERSION_SCHEMA = 2
+_SCHEMA = Path(__file__).with_name("schema.sql")  # version 1
+
+# Chaque migration fait passer la base de la version précédente à la clé.
+MIGRATIONS = {
+    2: "ALTER TABLE epreuves ADD COLUMN minutes_preparation INTEGER "
+    "CHECK (minutes_preparation IS NULL OR minutes_preparation > 0);",
+}
 
 
 def chemin_par_defaut() -> Path:
@@ -186,11 +192,13 @@ class Base:
             )
         if version < 1:
             self._cx.executescript(
-                "BEGIN;"
-                + _SCHEMA.read_text(encoding="utf-8")
-                + f"PRAGMA user_version = {VERSION_SCHEMA}; COMMIT;"
+                "BEGIN;" + _SCHEMA.read_text(encoding="utf-8") + "PRAGMA user_version = 1; COMMIT;"
             )
-        # Les migrations futures (version 2, 3…) s'ajouteront ici.
+            version = 1
+        for cible in range(version + 1, VERSION_SCHEMA + 1):
+            self._cx.executescript(
+                f"BEGIN; {MIGRATIONS[cible]} PRAGMA user_version = {cible}; COMMIT;"
+            )
 
     def preferences(self) -> m.Preferences:
         ligne = self._cx.execute(

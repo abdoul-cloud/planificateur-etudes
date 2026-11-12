@@ -141,10 +141,13 @@ class Epreuve:
     difficulte: int = 3
     preparation: int = 1  # niveau de préparation estimé, 1 à 5
     etat: EtatEpreuve = EtatEpreuve.A_PREPARER
+    minutes_preparation: int | None = None  # None = estimation automatique
     id: int | None = None
 
     def __post_init__(self) -> None:
         _ordre(self.debut, self.fin)
+        if self.minutes_preparation is not None and self.minutes_preparation <= 0:
+            raise ValueError("Le temps de préparation doit être positif")
         _echelle("L'importance", self.importance)
         _echelle("La difficulté", self.difficulte)
         _echelle("Le niveau de préparation", self.preparation)
@@ -278,8 +281,19 @@ class Preferences:
     plages_evitees: list[PlageHebdo] = field(default_factory=list)
     marge_echeance_heures: int = 12
     horizon_semaines: int = 3
+    # Révisions régulières : temps visé par semaine, placé seulement s'il
+    # reste de la place une fois les échéances servies.
+    minutes_revision_semaine: int = 300
+    # Avant une épreuve : aucune séance dans les heures qui précèdent, et une
+    # charge réduite le jour même.
+    repos_avant_epreuve_min: int = 180
+    max_minutes_jour_epreuve: int = 120
 
     def __post_init__(self) -> None:
+        if self.minutes_revision_semaine < 0:
+            raise ValueError("Le temps de révision ne peut pas être négatif")
+        if self.repos_avant_epreuve_min < 0 or self.max_minutes_jour_epreuve < 0:
+            raise ValueError("Repos ou limite du jour d'épreuve invalide")
         if not 0 < self.duree_min_seance <= self.duree_max_seance:
             raise ValueError("Durées de séance incohérentes")
         _ordre(self.debut_journee, self.fin_journee)
