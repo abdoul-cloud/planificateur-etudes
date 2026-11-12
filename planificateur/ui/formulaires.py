@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from .. import modeles as m
 from ..moteur.placement import minutes_preparation
+from .theme import bouton_role
 from .commun import (
     JOURS,
     LIBELLES,
@@ -86,11 +88,15 @@ class Formulaire(QDialog):
         boutons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        boutons.button(QDialogButtonBox.StandardButton.Ok).setText("Enregistrer")
+        bouton_role(boutons.button(QDialogButtonBox.StandardButton.Ok), "primaire").setText("Enregistrer")
         boutons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annuler")
         boutons.accepted.connect(self._valider)
         boutons.rejected.connect(self.reject)
+        self.form.setSpacing(10)
+        self.form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         disposition = QVBoxLayout(self)
+        disposition.setContentsMargins(22, 20, 22, 18)
+        disposition.setSpacing(16)
         disposition.addLayout(self.form)
         disposition.addWidget(boutons)
         self.resultat = None

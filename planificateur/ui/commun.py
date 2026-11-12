@@ -158,7 +158,8 @@ class EditeurPlages(QWidget):
     def __init__(self, plages: list[m.Plage] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.table = tableau(["Nom", "Début", "Fin"])
-        self.table.setMaximumHeight(150)
+        self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.setMaximumHeight(190)
         ajouter = QPushButton("+ Ajouter")
         retirer = QPushButton("− Retirer")
         ajouter.clicked.connect(lambda: self._ajouter_ligne(m.Plage(time(12), time(13), "Pause")))
@@ -229,7 +230,8 @@ class EditeurPlagesHebdo(QWidget):
     def __init__(self, plages: list[m.PlageHebdo] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.table = tableau(["Jours", "Début", "Fin"])
-        self.table.setMaximumHeight(150)
+        self.table.verticalHeader().setDefaultSectionSize(42)
+        self.table.setMaximumHeight(190)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         ajouter = QPushButton("+ Ajouter")
         retirer = QPushButton("− Retirer")

@@ -28,6 +28,8 @@ from planificateur.ui.formulaires import (  # noqa: E402
     FormulaireTravail,
 )
 from planificateur.ui.preferences import PagePreferences  # noqa: E402
+from planificateur.ui.accueil import PageAccueil  # noqa: E402
+from planificateur.ui.calendrier import PagePlanning  # noqa: E402
 
 LUNDI = date(2026, 11, 16)
 
@@ -214,20 +216,139 @@ def test_annulation_affichee_dans_l_emploi_du_temps(application, base):
     assert fenetre.pages["Emploi du temps"].table.item(0, 5).text() == "16/11"
 
 
-def test_apercu_calcule_le_planning(application, base, maths):
+def _semaine_type(base, maths):
     base.activites.ajouter(m.ActiviteFixe("Algèbre", time(7), time(18), jour_semaine=0, matiere_id=maths.id))
     base.epreuves.ajouter(m.Epreuve(maths.id, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16)))
-    fenetre = FenetrePrincipale(base)
-    page = fenetre.pages["Aperçu du planning"]
-    resultat = page.calculer(datetime(2026, 11, 16, 0, 0))
+
+
+def _page_planning(base):
+    page = PagePlanning(base)
+    page.avertir = lambda *args: None  # pas de fenêtre bloquante pendant les tests
+    page.lundi = LUNDI
+    return page
+
+
+def test_generer_enregistre_les_seances(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    resultat = page.generer(datetime(2026, 11, 16))
     assert resultat.seances
-    assert page.table.rowCount() == len(resultat.seances)
-    assert "séances" in page.resume.text()
-    assert base.seances.lister() == []  # l'aperçu n'enregistre rien
-    assert generer(base, datetime(2026, 11, 16)).seances == resultat.seances
+    assert len(base.seances.lister()) == len(resultat.seances)
+    assert page.calendrier.seances  # affichées dans la semaine
+    assert len(generer(base, datetime(2026, 11, 16)).retirees) == len(resultat.seances)  # remplacées, pas ajoutées
+    page.generer(datetime(2026, 11, 16))  # régénérer ne duplique pas
+    assert len(base.seances.lister()) == len(resultat.seances)
+
+
+def test_deplacer_une_seance_la_verrouille(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    seance = page.calendrier.seances[0]
+    debut = datetime.combine(seance.debut.date(), time(21))
+    assert page.deplacer(seance, debut, debut + (seance.fin - seance.debut))
+    deplacee = base.seances.obtenir(seance.id)
+    assert deplacee.debut == debut
+    assert deplacee.verrouillee and deplacee.origine is m.Origine.MANUELLE
+
+
+def test_deplacement_sur_un_cours_refuse(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    seance = page.calendrier.seances[0]
+    pendant_le_cours = datetime(2026, 11, 16, 9)
+    assert not page.deplacer(seance, pendant_le_cours, pendant_le_cours + timedelta(hours=1))
+    assert base.seances.obtenir(seance.id).debut == seance.debut
+
+
+def test_conflit_signale_apres_ajout_d_un_cours(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    seance = page.calendrier.seances[0]
+    base.activites.ajouter(m.ActiviteFixe("Rattrapage", seance.debut.time(), seance.fin.time(), date=seance.debut.date()))
+    page.rafraichir()
+    assert seance.id in page.calendrier.conflits
+
+
+def test_verrou_et_suppression(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    seance = page.calendrier.seances[0]
+    page.basculer_verrou(seance)
+    assert base.seances.obtenir(seance.id).verrouillee
+    page.supprimer(seance)
+    assert base.seances.obtenir(seance.id) is None
+
+
+def test_calendrier_se_dessine(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    page.resize(1200, 800)
+    assert not page.grab().isNull()
+    assert page.titre_semaine.text() == "16 – 22 novembre 2026"
+
+
+def test_navigation_entre_semaines(application, base):
+    page = _page_planning(base)
+    page.aller(1)
+    assert page.lundi == LUNDI + timedelta(weeks=1)
+    page.aujourd_hui()
+    assert page.lundi.weekday() == 0
+
+
+def test_accueil_resume_la_journee(application, base, maths):
+    _semaine_type(base, maths)
+    PagePlanning(base).generer(datetime(2026, 11, 16))
+    accueil = PageAccueil(base)
+    accueil.maintenant = datetime(2026, 11, 16, 8)
+    accueil.rafraichir()
+    assert accueil.stat_epreuve.valeur.text() == "Dans 3 jours"
+    assert not accueil.premiers_pas.isVisible() or base.activites.lister()
+
+
+def test_accueil_vide_propose_les_premiers_pas(application, base):
+    accueil = PageAccueil(base)
+    fenetre = FenetrePrincipale(base)
+    fenetre.show()
+    assert fenetre.pages["Accueil"].premiers_pas.isVisible()
+    fenetre.close()
+    assert accueil.stat_jour.valeur.text() == "Libre"
 
 
 def test_texte_duree():
     assert texte_duree(45) == "45 min"
     assert texte_duree(60) == "1 h"
     assert texte_duree(210) == "3 h 30"
+
+
+def test_glisser_deposer_a_la_souris(application, base, maths):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    page.resize(1200, 900)
+    page.show()
+    calendrier = page.calendrier
+    application.processEvents()
+    calendrier.repaint()
+    bloc = calendrier._blocs[0]
+    recu = []
+    calendrier.seance_deplacee.disconnect()
+    calendrier.seance_deplacee.connect(lambda s, d, f: recu.append((s, d, f)))
+    depart = bloc.rect.center().toPoint()
+    arrivee = depart + QPoint(0, calendrier.PX_HEURE)  # une heure plus tard
+    QTest.mousePress(calendrier, Qt.MouseButton.LeftButton, pos=depart)
+    QTest.mouseMove(calendrier, arrivee)
+    QTest.mouseRelease(calendrier, Qt.MouseButton.LeftButton, pos=arrivee)
+    page.close()
+    assert recu, "le déplacement n'a pas été signalé"
+    seance, debut, fin = recu[0]
+    assert seance is bloc.seance
+    assert debut - seance.debut == timedelta(hours=1)
+    assert fin - debut == seance.fin - seance.debut

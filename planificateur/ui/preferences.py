@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import time
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from .. import modeles as m
 from ..base import Base
+from .theme import bouton_role, en_tete, icone
 from .commun import (
     JOURS,
     EditeurPlages,
@@ -78,7 +79,8 @@ class _LigneJour:
         self.page = page
         self.jour = jour
         self.particulier = QCheckBox()
-        self.travaille = QCheckBox("travail")
+        self.travaille = QCheckBox()
+        self.travaille.setToolTip("Décochez pour un jour sans travail")
         self.debut = champ_heure(time(7))
         self.fin = champ_heure(time(23))
         self.limite = champ_minutes(360, 1440)
@@ -145,14 +147,11 @@ class PagePreferences(QWidget):
         super().__init__(parent)
         self.base = base
 
-        titre = QLabel("Préférences")
-        titre.setStyleSheet("font-size: 18px; font-weight: bold;")
-        aide = QLabel(
+        entete, actions = en_tete(
+            "Préférences",
             "Rien n'est imposé : adaptez les horaires, les pauses et les limites à votre rythme. "
-            "Un jour particulier remplace la journée type pour ce jour de la semaine."
+            "Un jour particulier remplace la journée type pour ce jour de la semaine.",
         )
-        aide.setWordWrap(True)
-        aide.setStyleSheet("color: gray;")
 
         # Séances
         self.duree_min = champ_minutes(45, 240, minimum=15, pas=5)
@@ -181,7 +180,7 @@ class PagePreferences(QWidget):
 
         # Jours particuliers
         self.table_jours = tableau(["Jour", "Particulier", "Travail", "Début", "Fin", "Limite", "Pauses"])
-        self.table_jours.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_jours.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_jours.setRowCount(7)
         self.lignes_jours = []
         for jour in range(7):
@@ -190,7 +189,8 @@ class PagePreferences(QWidget):
             for colonne, widget in enumerate(ligne.widgets(), start=1):
                 self.table_jours.setCellWidget(jour, colonne, widget)
             self.lignes_jours.append(ligne)
-        self.table_jours.setMinimumHeight(260)
+        self.table_jours.verticalHeader().setDefaultSectionSize(44)
+        self.table_jours.setMinimumHeight(7 * 44 + 46)
         jours = QGroupBox("Jours particuliers (ex. samedi plus court, dimanche de repos)")
         QVBoxLayout(jours).addWidget(self.table_jours)
 
@@ -198,9 +198,14 @@ class PagePreferences(QWidget):
         self.preferees = EditeurPlagesHebdo()
         self.evitees = EditeurPlagesHebdo()
         moments = QGroupBox("Moments préférés et moments à éviter")
-        f = QFormLayout(moments)
-        f.addRow("Préférés", self.preferees)
-        f.addRow("À éviter (si possible)", self.evitees)
+        disposition_moments = QHBoxLayout(moments)
+        disposition_moments.setSpacing(18)
+        for libelle, editeur in (("Préférés : choisis en premier", self.preferees),
+                                 ("À éviter : utilisés seulement si nécessaire", self.evitees)):
+            bloc = QVBoxLayout()
+            bloc.addWidget(QLabel(libelle))
+            bloc.addWidget(editeur)
+            disposition_moments.addLayout(bloc, 1)
 
         # Échéances et révisions
         self.revisions = champ_minutes(300, 3000)
@@ -217,28 +222,47 @@ class PagePreferences(QWidget):
         f.addRow("Planifier sur", self.horizon)
 
         # Boutons
-        enregistrer = QPushButton("Enregistrer")
-        enregistrer.setDefault(True)
+        enregistrer = bouton_role(QPushButton(icone("coche", "#FFFFFF"), " Enregistrer"), "primaire")
         enregistrer.clicked.connect(self.enregistrer)
         annuler = QPushButton("Annuler les modifications")
         annuler.clicked.connect(self.recharger)
-        defaut = QPushButton("Valeurs par défaut")
+        defaut = bouton_role(QPushButton("Valeurs par défaut"), "discret")
         defaut.clicked.connect(lambda: self.charger(m.Preferences()))
-        boutons = QHBoxLayout()
-        for b in (enregistrer, annuler, defaut):
-            boutons.addWidget(b)
-        boutons.addStretch()
+        for b in (defaut, annuler, enregistrer):
+            actions.addWidget(b)
+        self.confirmation = QLabel("")
+        self.confirmation.setObjectName("pastille")
+        self.confirmation.hide()
 
         contenu = QWidget()
+        contenu.setObjectName("defile")
         colonne = QVBoxLayout(contenu)
-        for w in (titre, aide, seances, journee, jours, moments, echeances):
-            colonne.addWidget(w)
-        colonne.addLayout(boutons)
+        colonne.setContentsMargins(0, 0, 12, 12)
+        colonne.setSpacing(4)
+        grille = QHBoxLayout()
+        grille.setSpacing(16)
+        gauche, droite = QVBoxLayout(), QVBoxLayout()
+        for w in (seances, echeances):
+            gauche.addWidget(w)
+        gauche.addStretch()
+        droite.addWidget(journee)
+        droite.addStretch()
+        grille.addLayout(gauche, 1)
+        grille.addLayout(droite, 1)
+        colonne.addLayout(grille)
+        colonne.addWidget(jours)
+        colonne.addWidget(moments)
         colonne.addStretch()
         defilement = QScrollArea()
         defilement.setWidgetResizable(True)
+        defilement.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         defilement.setWidget(contenu)
-        QVBoxLayout(self).addWidget(defilement)
+        disposition = QVBoxLayout(self)
+        disposition.setContentsMargins(28, 24, 16, 8)
+        disposition.setSpacing(12)
+        disposition.addWidget(entete)
+        disposition.addWidget(self.confirmation)
+        disposition.addWidget(defilement, 1)
 
         self.recharger()
 
@@ -308,6 +332,9 @@ class PagePreferences(QWidget):
             QMessageBox.warning(self, "Préférences incorrectes", str(erreur))
             return False
         self.base.enregistrer_preferences(preferences)
+        self.confirmation.setText("✓  Préférences enregistrées")
+        self.confirmation.show()
+        QTimer.singleShot(2500, self.confirmation.hide)
         self.preferences_enregistrees.emit()
         return True
 

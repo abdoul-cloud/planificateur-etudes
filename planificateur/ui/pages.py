@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -20,6 +19,8 @@ from PySide6.QtWidgets import (
 from .. import modeles as m
 from ..base import Base
 from ..moteur.placement import minutes_preparation
+from . import theme
+from .theme import bouton_role, carte, en_tete, icone
 from .commun import (
     JOURS,
     LIBELLES,
@@ -46,36 +47,48 @@ class PageListe(QWidget):
     aide = ""
     colonnes: list[str] = []
     message_suppression = "Supprimer « {} » ?"
+    texte_vide = "Rien pour l'instant. Cliquez sur « Ajouter » pour commencer."
 
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(parent)
         self.base = base
         self.objets: list = []
 
-        titre = QLabel(self.titre)
-        titre.setStyleSheet("font-size: 18px; font-weight: bold;")
-        aide = QLabel(self.aide)
-        aide.setWordWrap(True)
-        aide.setStyleSheet("color: gray;")
+        entete, self.actions = en_tete(self.titre, self.aide)
+        self.bouton_ajouter = bouton_role(QPushButton(icone("ajouter", "#FFFFFF"), " Ajouter"), "primaire")
+        self.bouton_modifier = QPushButton(icone("modifier"), " Modifier")
+        self.bouton_supprimer = bouton_role(QPushButton(icone("supprimer", theme.DANGER), " Supprimer"), "danger")
+        self.bouton_ajouter.clicked.connect(self.ajouter)
+        self.bouton_modifier.clicked.connect(self.modifier)
+        self.bouton_supprimer.clicked.connect(self.supprimer)
+        for bouton in (self.bouton_supprimer, self.bouton_modifier, self.bouton_ajouter):
+            self.actions.addWidget(bouton)
 
         self.table = tableau(self.colonnes)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.table.doubleClicked.connect(self.modifier)
+        self.table.itemSelectionChanged.connect(self._actualiser_boutons)
 
-        self.boutons = QHBoxLayout()
-        for texte, action in (("+ Ajouter", self.ajouter), ("Modifier", self.modifier), ("Supprimer", self.supprimer)):
-            bouton = QPushButton(texte)
-            bouton.clicked.connect(action)
-            self.boutons.addWidget(bouton)
-        self.boutons.addStretch()
+        self.vide = QLabel(self.texte_vide)
+        self.vide.setObjectName("vide")
+        self.vide.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vide.setWordWrap(True)
+        self.cadre_vide = carte()
+        disposition_vide = QVBoxLayout(self.cadre_vide)
+        disposition_vide.addWidget(self.vide)
 
         disposition = QVBoxLayout(self)
-        disposition.addWidget(titre)
-        disposition.addWidget(aide)
-        disposition.addLayout(self.boutons)
-        disposition.addWidget(self.table)
+        disposition.setContentsMargins(28, 24, 28, 20)
+        disposition.setSpacing(16)
+        disposition.addWidget(entete)
+        disposition.addWidget(self.table, 1)
+        disposition.addWidget(self.cadre_vide, 1)
         self.rafraichir()
 
     # À définir par chaque écran --------------------------------------------
@@ -120,6 +133,14 @@ class PageListe(QWidget):
                 if c == 0 and couleur:
                     cellule.setData(Qt.ItemDataRole.DecorationRole, QColor(couleur))
                 self.table.setItem(n, c, cellule)
+        self.table.setVisible(bool(self.objets))
+        self.cadre_vide.setVisible(not self.objets)
+        self._actualiser_boutons()
+
+    def _actualiser_boutons(self) -> None:
+        choisi = self.selection() is not None
+        self.bouton_modifier.setEnabled(choisi)
+        self.bouton_supprimer.setEnabled(choisi)
 
     def selection(self):
         ligne = self.table.currentRow()
@@ -179,6 +200,7 @@ class PageMatieres(PageListe):
         "une matière difficile et peu maîtrisée reçoit plus de temps."
     )
     colonnes = ["Matière", "Code", "Coefficient", "Difficulté", "Maîtrise"]
+    texte_vide = "Aucune matière pour l'instant.\nCommencez par ajouter vos matières : tout le reste s'y rattache."
 
     @property
     def depot(self):
@@ -204,13 +226,14 @@ class PageEmploiDuTemps(PageListe):
         "Pour un repos ou une indisponibilité (soirée, journée), choisissez le type « Personnel / repos »."
     )
     colonnes = ["Activité", "Type", "Quand", "Horaire", "Matière", "Annulations"]
+    texte_vide = "Votre emploi du temps est vide.\nAjoutez vos cours, trajets et engagements à heure fixe."
 
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(base, parent)
-        annuler = QPushButton("Annuler une séance…")
+        annuler = QPushButton(icone("annuler"), " Annuler une séance…")
         annuler.setToolTip("Jour férié, cours annulé : libère ce créneau pour une seule date")
         annuler.clicked.connect(self.annuler_une_seance)
-        self.boutons.insertWidget(3, annuler)
+        self.actions.insertWidget(0, annuler)
 
     @property
     def depot(self):
@@ -260,6 +283,7 @@ class PageEpreuves(PageListe):
         "Le planning prévoit leur préparation avant, jamais après."
     )
     colonnes = ["Épreuve", "Matière", "Date", "Horaire", "Préparation prévue", "État"]
+    texte_vide = "Aucune épreuve programmée.\nAjoutez vos interrogations, devoirs et compositions dès que vous les connaissez."
 
     @property
     def depot(self):
@@ -291,6 +315,7 @@ class PageTravaux(PageListe):
         "s'il est déjà commencé, seul le temps restant est planifié."
     )
     colonnes = ["Travail", "Matière", "À rendre le", "Reste à faire", "État"]
+    texte_vide = "Aucun travail à rendre.\nAjoutez exercices, rapports, exposés… avec une estimation du temps."
 
     @property
     def depot(self):
