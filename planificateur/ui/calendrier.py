@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from pathlib import Path
+
+from PySide6.QtCore import QPointF, QRectF, QStandardPaths, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -113,6 +116,7 @@ class CalendrierSemaine(QWidget):
         self._decalage = QPointF()
         self._fantome: tuple[datetime, datetime] | None = None
         self.maintenant = None  # pour les tests ; sinon l'heure réelle
+        self.impression = False  # rendu pour l'export : ni « aujourd'hui » ni heure actuelle
 
     # --- Données -------------------------------------------------------------
 
@@ -237,7 +241,7 @@ class CalendrierSemaine(QWidget):
         for j in range(7):
             jour = self.lundi + timedelta(days=j)
             x = self._x(j)
-            est_aujourd_hui = jour == aujourd_hui
+            est_aujourd_hui = jour == aujourd_hui and not self.impression
             police.setPointSizeF(8)
             police.setBold(False)
             p.setFont(police)
@@ -357,6 +361,8 @@ class CalendrierSemaine(QWidget):
         p.restore()
 
     def _dessiner_maintenant(self, p: QPainter) -> None:
+        if self.impression:
+            return
         maintenant = self.maintenant or datetime.now()
         jour = (maintenant.date() - self.lundi).days
         if not 0 <= jour <= 6 or not self.heure_min <= maintenant.hour < self.heure_max:
@@ -508,9 +514,15 @@ class PagePlanning(QWidget):
         suivant.clicked.connect(lambda: self.aller(1))
         aujourd_hui.clicked.connect(self.aujourd_hui)
         self.bouton_generer.clicked.connect(self.generer)
+        exporter = QPushButton(icone("imprimer"), " Exporter")
+        menu_export = QMenu(exporter)
+        menu_export.addAction("PDF A4 à imprimer…", self.choisir_export_pdf)
+        menu_export.addAction("Image PNG…", self.choisir_export_png)
+        exporter.setMenu(menu_export)
         for w in (precedent, aujourd_hui, suivant):
             actions.addWidget(w)
         actions.addSpacing(12)
+        actions.addWidget(exporter)
         actions.addWidget(self.bouton_generer)
 
         self.pastilles = QHBoxLayout()
@@ -737,6 +749,40 @@ class PagePlanning(QWidget):
     def signaler_changement(self) -> None:
         """Les données ont changé ailleurs : proposer de recalculer."""
         self.bandeau.show()
+
+    # --- Export ------------------------------------------------------------------
+
+    def _chemin_export(self, extension: str, filtre: str) -> Path | None:
+        documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        propose = str(Path(documents) / f"Planning-{self.lundi.isoformat()}.{extension}")
+        chemin, _ = QFileDialog.getSaveFileName(self, "Exporter le planning de la semaine", propose, filtre)
+        return Path(chemin).with_suffix(f".{extension}") if chemin else None
+
+    def choisir_export_pdf(self) -> None:
+        chemin = self._chemin_export("pdf", "Document PDF (*.pdf)")
+        if chemin:
+            self.exporter(chemin)
+
+    def choisir_export_png(self) -> None:
+        chemin = self._chemin_export("png", "Image PNG (*.png)")
+        if chemin:
+            self.exporter(chemin)
+
+    def exporter(self, chemin: Path, ouvrir: bool = True) -> Path | None:
+        from .export import exporter_pdf, exporter_png
+
+        try:
+            if chemin.suffix.lower() == ".png":
+                exporter_png(self.base, self.lundi, chemin)
+            else:
+                exporter_pdf(self.base, self.lundi, chemin)
+        except OSError as erreur:
+            self.avertir(self, "Export impossible", str(erreur))
+            return None
+        self.informer(f"Planning exporté : {chemin.name}")
+        if ouvrir:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(chemin)))
+        return chemin
 
     def basculer_verrou(self, seance: m.Seance) -> None:
         self.base.seances.modifier(replace(seance, verrouillee=not seance.verrouillee))

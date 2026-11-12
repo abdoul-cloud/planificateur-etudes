@@ -14,6 +14,10 @@ def main() -> int:
     application.setApplicationName("Planificateur d'études")
     appliquer_theme(application)
     base = Base()
+    try:
+        base.sauvegarde_automatique()
+    except (OSError, ValueError):
+        pass  # une copie manquée ne doit jamais empêcher l'ouverture
     fenetre = FenetrePrincipale(base)
     fenetre.show()
     code = application.exec()

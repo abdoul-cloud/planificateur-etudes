@@ -20,6 +20,7 @@ from ..suivi import mettre_a_jour_etats
 from . import theme
 from .accueil import PageAccueil
 from .bilan import PageBilan
+from .donnees import PageDonnees
 from .calendrier import PagePlanning, generer  # noqa: F401  (generer réexporté)
 from .pages import PageEmploiDuTemps, PageEpreuves, PageMatieres, PageTravaux
 from .preferences import PagePreferences
@@ -35,6 +36,7 @@ ECRANS = [
     ("Épreuves", "epreuves", "MES DONNÉES"),
     ("Travaux à rendre", "travaux", "MES DONNÉES"),
     ("Préférences", "preferences", "RÉGLAGES"),
+    ("Sauvegarde", "sauvegarde", "RÉGLAGES"),
 ]
 
 
@@ -58,6 +60,7 @@ class FenetrePrincipale(QMainWindow):
             "Épreuves": PageEpreuves(base),
             "Travaux à rendre": PageTravaux(base),
             "Préférences": PagePreferences(base),
+            "Sauvegarde": PageDonnees(base),
         }
         self.pile = QStackedWidget()
         for nom in self.ECRANS:
@@ -137,6 +140,7 @@ class FenetrePrincipale(QMainWindow):
             self.pages[nom].donnees_modifiees.connect(planning.signaler_changement)
         self.pages["Préférences"].preferences_enregistrees.connect(planning.signaler_changement)
         self.pages["Accueil"].replanifier.connect(self._replanifier_depuis_accueil)
+        self.pages["Sauvegarde"].donnees_restaurees.connect(self._apres_restauration)
         self.afficher("Accueil")
 
     def _replanifier_depuis_accueil(self) -> None:
@@ -144,6 +148,12 @@ class FenetrePrincipale(QMainWindow):
         resultat = planning.generer()
         planning.informer("Séance manquée : le planning a été recalculé"
                           + ("" if resultat.faisable else " — tout ne tient plus, voir l'alerte"))
+
+    def _apres_restauration(self) -> None:
+        mettre_a_jour_etats(self.base)
+        self.pages["Préférences"].recharger()
+        self.pages["Planning"].dernier_resultat = None
+        self.rafraichir_tout()
 
     def rafraichir_tout(self) -> None:
         for page in self.pages.values():
@@ -153,6 +163,6 @@ class FenetrePrincipale(QMainWindow):
     def afficher(self, nom: str) -> None:
         self.boutons[nom].setChecked(True)
         page = self.pages[nom]
-        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan"):
+        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan", "Sauvegarde"):
             page.rafraichir()
         self.pile.setCurrentWidget(page)

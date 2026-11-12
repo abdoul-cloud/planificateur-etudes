@@ -25,6 +25,55 @@ MIGRATIONS = {
 }
 
 
+TABLES_ATTENDUES = {"matieres", "activites_fixes", "epreuves", "travaux", "seances", "parametres"}
+
+
+class InfoSauvegarde:
+    """Résumé d'un fichier de sauvegarde vérifié."""
+
+    def __init__(self, chemin: Path, version: int, comptes: dict[str, int]) -> None:
+        self.chemin = chemin
+        self.version = version
+        self.comptes = comptes
+
+    def resume(self) -> str:
+        c = self.comptes
+        return (f"{c['matieres']} matière(s), {c['activites_fixes']} activité(s), {c['epreuves']} épreuve(s), "
+                f"{c['travaux']} travail(aux), {c['seances']} séance(s)")
+
+
+def _ouvrir_lecture_seule(chemin: Path) -> sqlite3.Connection:
+    return sqlite3.connect(Path(chemin).resolve().as_uri() + "?mode=ro", uri=True)
+
+
+def verifier_sauvegarde(chemin: Path | str) -> InfoSauvegarde:
+    """Vérifie qu'un fichier est une sauvegarde lisible et intacte du planificateur.
+
+    Lève ValueError avec un message compréhensible sinon. Le fichier n'est
+    jamais modifié.
+    """
+    chemin = Path(chemin)
+    if not chemin.is_file():
+        raise ValueError("Ce fichier n'existe pas.")
+    try:
+        cx = _ouvrir_lecture_seule(chemin)
+        try:
+            if cx.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise ValueError("Ce fichier est endommagé : la vérification d'intégrité a échoué.")
+            version = cx.execute("PRAGMA user_version").fetchone()[0]
+            tables = {r[0] for r in cx.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            if not TABLES_ATTENDUES <= tables or version < 1:
+                raise ValueError("Ce fichier n'est pas une sauvegarde du planificateur.")
+            if version > VERSION_SCHEMA:
+                raise ValueError("Cette sauvegarde vient d'une version plus récente de l'application.")
+            comptes = {nom: cx.execute(f"SELECT COUNT(*) FROM {nom}").fetchone()[0] for nom in sorted(TABLES_ATTENDUES)}
+        finally:
+            cx.close()
+    except sqlite3.DatabaseError as erreur:
+        raise ValueError("Ce fichier n'est pas une sauvegarde lisible du planificateur.") from erreur
+    return InfoSauvegarde(chemin, version, comptes)
+
+
 def chemin_par_defaut() -> Path:
     """Emplacement stable des données : %APPDATA%\\PlanificateurEtudes."""
     racine = Path(os.environ.get("APPDATA", Path.home()))
@@ -216,6 +265,63 @@ class Base:
                 "ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
                 [json.dumps(donnees)],
             )
+
+    # --- Sauvegarde et restauration -----------------------------------------
+
+    @property
+    def dossier_sauvegardes(self) -> Path:
+        dossier = self.chemin.parent / "sauvegardes"
+        dossier.mkdir(parents=True, exist_ok=True)
+        return dossier
+
+    def sauvegarder(self, destination: Path | str) -> InfoSauvegarde:
+        """Copie cohérente des données vers `destination`, puis vérification."""
+        destination = Path(destination)
+        if destination.resolve() == self.chemin.resolve():
+            raise ValueError("Choisissez un autre fichier que celui des données en cours.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            destination.unlink()
+        cible = sqlite3.connect(destination)
+        try:
+            self._cx.backup(cible)
+        finally:
+            cible.close()
+        return verifier_sauvegarde(destination)
+
+    def restaurer(self, source: Path | str, maintenant: datetime | None = None) -> Path:
+        """Remplace les données par celles d'une sauvegarde vérifiée.
+
+        Les données actuelles sont d'abord copiées dans le dossier des
+        sauvegardes : renvoie le chemin de cette copie de sécurité.
+        """
+        source = Path(source)
+        if source.resolve() == self.chemin.resolve():
+            raise ValueError("Ce fichier est celui des données en cours.")
+        verifier_sauvegarde(source)
+        horodatage = (maintenant or datetime.now()).strftime("%Y-%m-%d_%H%M%S")
+        securite = self.dossier_sauvegardes / f"avant-restauration_{horodatage}.db"
+        self.sauvegarder(securite)
+        origine = _ouvrir_lecture_seule(source)
+        try:
+            origine.backup(self._cx)
+        finally:
+            origine.close()
+        self._migrer()  # une sauvegarde plus ancienne est mise à niveau
+        return securite
+
+    def sauvegarde_automatique(self, garder: int = 10, aujourd_hui: date | None = None) -> Path | None:
+        """Une copie par jour dans le dossier des sauvegardes, les `garder` plus récentes."""
+        jour = aujourd_hui or date.today()
+        cible = self.dossier_sauvegardes / f"auto_{jour.isoformat()}.db"
+        cree = None
+        if not cible.exists():
+            self.sauvegarder(cible)
+            cree = cible
+        automatiques = sorted(self.dossier_sauvegardes.glob("auto_*.db"))
+        for ancienne in automatiques[:-garder]:
+            ancienne.unlink()
+        return cree
 
     def fermer(self) -> None:
         self._cx.close()

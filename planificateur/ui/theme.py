@@ -52,6 +52,10 @@ ICONES = {
     "drapeau": "\ue7c1",
     "coche": "\ue73e",
     "bilan": "\ue9d2",
+    "imprimer": "\ue749",
+    "sauvegarde": "\ue74e",
+    "dossier": "\ue838",
+    "restaurer": "\ue777",
 }
 
 
