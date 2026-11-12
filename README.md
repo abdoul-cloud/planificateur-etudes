@@ -35,6 +35,7 @@ powershell -ExecutionPolicy Bypass -File packaging/construire.ps1
 ```
 
 Outils nécessaires : `pip install -e .[dev]` (PyInstaller, Pillow, pytest) et Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Pour une nouvelle version, changer le numéro dans `pyproject.toml`, `planificateur/__main__.py`, `packaging/version.txt` et `packaging/installateur.iss`.
+
 ## Tests
 
 ```bash
