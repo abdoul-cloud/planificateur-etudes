@@ -3,7 +3,10 @@ name = "planificateur-etudes"
 version = "0.1.0"
 description = "Planificateur personnel des études, hors ligne"
 requires-python = ">=3.12"
-dependencies = []  # PySide6 sera ajouté à l'étape 4 (interface)
+dependencies = ["PySide6>=6.6"]
+
+[project.scripts]
+planificateur = "planificateur.__main__:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]

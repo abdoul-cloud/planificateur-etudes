@@ -1,0 +1,309 @@
+"""Écrans de liste : matières, emploi du temps, épreuves, travaux à rendre."""
+
+from __future__ import annotations
+
+import sqlite3
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .. import modeles as m
+from ..base import Base
+from ..moteur.placement import minutes_preparation
+from .commun import (
+    JOURS,
+    LIBELLES,
+    tableau,
+    texte_date,
+    texte_date_heure,
+    texte_duree,
+    texte_heure,
+)
+from .formulaires import (
+    FormulaireActivite,
+    FormulaireAnnulation,
+    FormulaireEpreuve,
+    FormulaireMatiere,
+    FormulaireTravail,
+)
+
+
+class PageListe(QWidget):
+    """Tableau d'éléments avec les boutons Ajouter / Modifier / Supprimer."""
+
+    donnees_modifiees = Signal()
+    titre = ""
+    aide = ""
+    colonnes: list[str] = []
+    message_suppression = "Supprimer « {} » ?"
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__(parent)
+        self.base = base
+        self.objets: list = []
+
+        titre = QLabel(self.titre)
+        titre.setStyleSheet("font-size: 18px; font-weight: bold;")
+        aide = QLabel(self.aide)
+        aide.setWordWrap(True)
+        aide.setStyleSheet("color: gray;")
+
+        self.table = tableau(self.colonnes)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.doubleClicked.connect(self.modifier)
+
+        self.boutons = QHBoxLayout()
+        for texte, action in (("+ Ajouter", self.ajouter), ("Modifier", self.modifier), ("Supprimer", self.supprimer)):
+            bouton = QPushButton(texte)
+            bouton.clicked.connect(action)
+            self.boutons.addWidget(bouton)
+        self.boutons.addStretch()
+
+        disposition = QVBoxLayout(self)
+        disposition.addWidget(titre)
+        disposition.addWidget(aide)
+        disposition.addLayout(self.boutons)
+        disposition.addWidget(self.table)
+        self.rafraichir()
+
+    # À définir par chaque écran --------------------------------------------
+
+    @property
+    def depot(self):
+        raise NotImplementedError
+
+    def elements(self) -> list:
+        return self.depot.lister()
+
+    def ligne(self, objet) -> list[str]:
+        raise NotImplementedError
+
+    def formulaire(self, objet=None):
+        raise NotImplementedError
+
+    def nom(self, objet) -> str:
+        return getattr(objet, "nom", None) or getattr(objet, "intitule", "") or "cet élément"
+
+    def couleur(self, objet) -> str | None:
+        return None
+
+    # Mécanique commune ------------------------------------------------------
+
+    def matieres(self) -> list[m.Matiere]:
+        return self.base.matieres.lister(ordre="nom")
+
+    def nom_matiere(self, matiere_id: int | None) -> str:
+        if matiere_id is None:
+            return ""
+        matiere = self.base.matieres.obtenir(matiere_id)
+        return matiere.nom if matiere else "?"
+
+    def rafraichir(self) -> None:
+        self.objets = self.elements()
+        self.table.setRowCount(len(self.objets))
+        for n, objet in enumerate(self.objets):
+            couleur = self.couleur(objet)
+            for c, texte in enumerate(self.ligne(objet)):
+                cellule = QTableWidgetItem(texte)
+                if c == 0 and couleur:
+                    cellule.setData(Qt.ItemDataRole.DecorationRole, QColor(couleur))
+                self.table.setItem(n, c, cellule)
+
+    def selection(self):
+        ligne = self.table.currentRow()
+        return self.objets[ligne] if 0 <= ligne < len(self.objets) else None
+
+    def _ouvrir(self, objet=None):
+        try:
+            return self.formulaire(objet)
+        except ValueError as erreur:  # ex. aucune matière encore saisie
+            QMessageBox.information(self, self.titre, str(erreur))
+            return None
+
+    def ajouter(self) -> None:
+        formulaire = self._ouvrir()
+        if formulaire and formulaire.exec():
+            self.depot.ajouter(formulaire.resultat)
+            self._modifie()
+
+    def modifier(self) -> None:
+        objet = self.selection()
+        if objet is None:
+            QMessageBox.information(self, self.titre, "Sélectionnez d'abord une ligne.")
+            return
+        formulaire = self._ouvrir(objet)
+        if formulaire and formulaire.exec():
+            self.depot.modifier(formulaire.resultat)
+            self._modifie()
+
+    def supprimer(self) -> None:
+        objet = self.selection()
+        if objet is None:
+            QMessageBox.information(self, self.titre, "Sélectionnez d'abord une ligne.")
+            return
+        reponse = QMessageBox.question(self, "Confirmer", self.message_suppression.format(self.nom(objet)))
+        if reponse != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.depot.supprimer(objet.id)
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(
+                self, "Suppression impossible",
+                f"« {self.nom(objet)} » est encore utilisée par une épreuve ou un travail. "
+                "Supprimez ou modifiez-les d'abord.",
+            )
+            return
+        self._modifie()
+
+    def _modifie(self) -> None:
+        self.rafraichir()
+        self.donnees_modifiees.emit()
+
+
+class PageMatieres(PageListe):
+    titre = "Matières"
+    aide = (
+        "La difficulté et la maîtrise (de 1 à 5) servent à répartir les révisions : "
+        "une matière difficile et peu maîtrisée reçoit plus de temps."
+    )
+    colonnes = ["Matière", "Code", "Coefficient", "Difficulté", "Maîtrise"]
+
+    @property
+    def depot(self):
+        return self.base.matieres
+
+    def elements(self):
+        return self.base.matieres.lister(ordre="nom")
+
+    def ligne(self, x: m.Matiere):
+        return [x.nom, x.code, f"{x.coefficient:g}", f"{x.difficulte} / 5", f"{x.maitrise} / 5"]
+
+    def couleur(self, x: m.Matiere):
+        return x.couleur
+
+    def formulaire(self, objet=None):
+        return FormulaireMatiere(objet, self)
+
+
+class PageEmploiDuTemps(PageListe):
+    titre = "Emploi du temps"
+    aide = (
+        "Cours, TD, TP, trajets et engagements à heure fixe : le planning ne les déplace jamais. "
+        "Pour un repos ou une indisponibilité (soirée, journée), choisissez le type « Personnel / repos »."
+    )
+    colonnes = ["Activité", "Type", "Quand", "Horaire", "Matière", "Annulations"]
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__(base, parent)
+        annuler = QPushButton("Annuler une séance…")
+        annuler.setToolTip("Jour férié, cours annulé : libère ce créneau pour une seule date")
+        annuler.clicked.connect(self.annuler_une_seance)
+        self.boutons.insertWidget(3, annuler)
+
+    @property
+    def depot(self):
+        return self.base.activites
+
+    def elements(self):
+        return self.base.activites.lister(ordre="jour_semaine IS NULL, jour_semaine, date, heure_debut")
+
+    def ligne(self, x: m.ActiviteFixe):
+        if x.recurrente:
+            quand = f"Chaque {JOURS[x.jour_semaine].lower()}"
+            if x.valide_du or x.valide_au:
+                quand += " (période limitée)"
+        else:
+            quand = texte_date(x.date)
+        horaire = f"{texte_heure(x.heure_debut)} – {texte_heure(x.heure_fin)}"
+        if x.marge_avant_min or x.marge_apres_min:
+            horaire += f" (+ trajet {x.marge_avant_min}/{x.marge_apres_min} min)"
+        annulations = self.base.exceptions.lister("activite_id = ?", (x.id,), ordre="date")
+        return [
+            x.nom, LIBELLES[x.type], quand, horaire, self.nom_matiere(x.matiere_id),
+            ", ".join(f"{e.date:%d/%m}" for e in annulations),
+        ]
+
+    def formulaire(self, objet=None):
+        return FormulaireActivite(self.matieres(), objet, self)
+
+    def annuler_une_seance(self) -> None:
+        activite = self.selection()
+        if activite is None or not activite.recurrente:
+            QMessageBox.information(self, self.titre, "Sélectionnez d'abord une activité hebdomadaire.")
+            return
+        formulaire = FormulaireAnnulation(activite, self)
+        if formulaire.exec():
+            try:
+                self.base.exceptions.ajouter(formulaire.resultat)
+            except sqlite3.IntegrityError:
+                QMessageBox.information(self, self.titre, "Cette séance est déjà annulée.")
+                return
+            self._modifie()
+
+
+class PageEpreuves(PageListe):
+    titre = "Épreuves"
+    aide = (
+        "Interrogations, devoirs surveillés, compositions et examens à date et heure fixes. "
+        "Le planning prévoit leur préparation avant, jamais après."
+    )
+    colonnes = ["Épreuve", "Matière", "Date", "Horaire", "Préparation prévue", "État"]
+
+    @property
+    def depot(self):
+        return self.base.epreuves
+
+    def elements(self):
+        return self.base.epreuves.lister(ordre="debut")
+
+    def nom(self, x: m.Epreuve):
+        return x.intitule or f"{LIBELLES[x.type]} de {self.nom_matiere(x.matiere_id)}"
+
+    def ligne(self, x: m.Epreuve):
+        temps = texte_duree(minutes_preparation(x))
+        if x.minutes_preparation is None:
+            temps += " (estimé)"
+        return [
+            x.intitule or LIBELLES[x.type], self.nom_matiere(x.matiere_id), texte_date(x.debut.date()),
+            f"{x.debut:%H:%M} – {x.fin:%H:%M}", temps, LIBELLES[x.etat],
+        ]
+
+    def formulaire(self, objet=None):
+        return FormulaireEpreuve(self.matieres(), objet, self)
+
+
+class PageTravaux(PageListe):
+    titre = "Travaux à rendre"
+    aide = (
+        "Exercices, TD, rapports, projets, exposés… Indiquez le temps estimé ; "
+        "s'il est déjà commencé, seul le temps restant est planifié."
+    )
+    colonnes = ["Travail", "Matière", "À rendre le", "Reste à faire", "État"]
+
+    @property
+    def depot(self):
+        return self.base.travaux
+
+    def elements(self):
+        return self.base.travaux.lister(ordre="echeance")
+
+    def ligne(self, x: m.Travail):
+        return [
+            x.intitule, self.nom_matiere(x.matiere_id), texte_date_heure(x.echeance),
+            f"{texte_duree(x.minutes_restantes)} sur {texte_duree(x.minutes_estimees)}", LIBELLES[x.etat],
+        ]
+
+    def formulaire(self, objet=None):
+        return FormulaireTravail(self.matieres(), objet, self)
