@@ -1,0 +1,13 @@
+[project]
+name = "planificateur-etudes"
+version = "0.1.0"
+description = "Planificateur personnel des études, hors ligne"
+requires-python = ">=3.12"
+dependencies = []  # PySide6 sera ajouté à l'étape 4 (interface)
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

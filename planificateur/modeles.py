@@ -1,0 +1,254 @@
+"""Modèles de données du planificateur (cahier des charges, section 5).
+
+Ces classes ne dépendent ni de SQLite ni de l'interface : le moteur de
+planification les reçoit en entrée et renvoie des `Seance`.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
+from enum import StrEnum
+
+
+class TypeActivite(StrEnum):
+    COURS = "cours"
+    TD = "td"
+    TP = "tp"
+    DEPLACEMENT = "deplacement"
+    PERSONNEL = "personnel"  # sommeil, repas, repos, engagements
+    AUTRE = "autre"
+
+
+class TypeEpreuve(StrEnum):
+    INTERROGATION = "interrogation"
+    DEVOIR_SURVEILLE = "devoir_surveille"
+    COMPOSITION = "composition"
+    EXAMEN = "examen"
+
+
+class EtatEpreuve(StrEnum):
+    A_PREPARER = "a_preparer"
+    PREPAREE = "preparee"
+    PASSEE = "passee"
+
+
+class EtatTravail(StrEnum):
+    A_FAIRE = "a_faire"
+    EN_COURS = "en_cours"
+    TERMINE = "termine"
+    RENDU = "rendu"
+
+
+class TypeSeance(StrEnum):
+    REVISION = "revision"
+    PREPARATION = "preparation"  # préparation d'une épreuve
+    TRAVAIL = "travail"  # travail à rendre
+
+
+class StatutSeance(StrEnum):
+    PREVUE = "prevue"
+    TERMINEE = "terminee"
+    PARTIELLE = "partielle"
+    MANQUEE = "manquee"
+    REPORTEE = "reportee"
+
+
+class Origine(StrEnum):
+    AUTO = "auto"
+    MANUELLE = "manuelle"
+
+
+def _echelle(nom: str, valeur: int) -> None:
+    if not 1 <= valeur <= 5:
+        raise ValueError(f"{nom} doit être compris entre 1 et 5 (reçu : {valeur})")
+
+
+def _ordre(debut, fin) -> None:
+    if fin <= debut:
+        raise ValueError("La fin doit être postérieure au début")
+
+
+@dataclass
+class Matiere:
+    nom: str
+    code: str = ""
+    coefficient: float = 1.0
+    difficulte: int = 3  # 1 = facile, 5 = très difficile
+    maitrise: int = 3  # 1 = pas maîtrisée, 5 = très bien maîtrisée
+    couleur: str = "#4C72B0"
+    notes: str = ""
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.nom.strip():
+            raise ValueError("Le nom de la matière est obligatoire")
+        if self.coefficient <= 0:
+            raise ValueError("Le coefficient doit être positif")
+        _echelle("La difficulté", self.difficulte)
+        _echelle("La maîtrise", self.maitrise)
+
+
+@dataclass
+class ActiviteFixe:
+    """Créneau non déplaçable : hebdomadaire (jour_semaine) ou ponctuel (date)."""
+
+    nom: str
+    heure_debut: time
+    heure_fin: time
+    type: TypeActivite = TypeActivite.COURS
+    jour_semaine: int | None = None  # 0 = lundi … 6 = dimanche
+    date: date | None = None
+    valide_du: date | None = None  # bornes de la récurrence (semestre)
+    valide_au: date | None = None
+    marge_avant_min: int = 0  # déplacement avant
+    marge_apres_min: int = 0
+    matiere_id: int | None = None
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        _ordre(self.heure_debut, self.heure_fin)
+        if (self.jour_semaine is None) == (self.date is None):
+            raise ValueError("Indiquer soit un jour de la semaine, soit une date")
+        if self.jour_semaine is not None and not 0 <= self.jour_semaine <= 6:
+            raise ValueError("Le jour de la semaine va de 0 (lundi) à 6 (dimanche)")
+        if self.marge_avant_min < 0 or self.marge_apres_min < 0:
+            raise ValueError("Les marges ne peuvent pas être négatives")
+
+    @property
+    def recurrente(self) -> bool:
+        return self.jour_semaine is not None
+
+
+@dataclass
+class ExceptionActivite:
+    """Occurrence annulée d'une activité récurrente (férié, cours annulé)."""
+
+    activite_id: int
+    date: date
+    id: int | None = None
+
+
+@dataclass
+class Epreuve:
+    matiere_id: int
+    debut: datetime
+    fin: datetime
+    type: TypeEpreuve = TypeEpreuve.COMPOSITION
+    intitule: str = ""
+    chapitres: str = ""
+    importance: int = 3
+    difficulte: int = 3
+    preparation: int = 1  # niveau de préparation estimé, 1 à 5
+    etat: EtatEpreuve = EtatEpreuve.A_PREPARER
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        _ordre(self.debut, self.fin)
+        _echelle("L'importance", self.importance)
+        _echelle("La difficulté", self.difficulte)
+        _echelle("Le niveau de préparation", self.preparation)
+
+
+@dataclass
+class Travail:
+    intitule: str
+    matiere_id: int
+    echeance: datetime
+    minutes_estimees: int
+    minutes_restantes: int | None = None  # None = rien de fait
+    type: str = "devoir"
+    date_cible: datetime | None = None  # échéance personnelle anticipée
+    importance: int = 3
+    etat: EtatTravail = EtatTravail.A_FAIRE
+    notes: str = ""
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.intitule.strip():
+            raise ValueError("L'intitulé du travail est obligatoire")
+        if self.minutes_estimees <= 0:
+            raise ValueError("Le temps estimé doit être positif")
+        if self.minutes_restantes is None:
+            self.minutes_restantes = self.minutes_estimees
+        if self.minutes_restantes < 0:
+            raise ValueError("Le temps restant ne peut pas être négatif")
+        if self.date_cible is not None and self.date_cible > self.echeance:
+            raise ValueError("La date cible doit précéder l'échéance officielle")
+        _echelle("L'importance", self.importance)
+
+
+@dataclass
+class SousTache:
+    travail_id: int
+    intitule: str
+    terminee: bool = False
+    ordre: int = 0
+    id: int | None = None
+
+
+@dataclass
+class Seance:
+    type: TypeSeance
+    debut: datetime
+    fin: datetime
+    matiere_id: int | None = None
+    epreuve_id: int | None = None
+    travail_id: int | None = None
+    statut: StatutSeance = StatutSeance.PREVUE
+    minutes_effectuees: int | None = None
+    origine: Origine = Origine.AUTO
+    verrouillee: bool = False  # jamais déplacée par un recalcul
+    id: int | None = None
+
+    def __post_init__(self) -> None:
+        _ordre(self.debut, self.fin)
+        if self.type is TypeSeance.PREPARATION and self.epreuve_id is None:
+            raise ValueError("Une séance de préparation doit viser une épreuve")
+        if self.type is TypeSeance.TRAVAIL and self.travail_id is None:
+            raise ValueError("Une séance de travail doit viser un travail à rendre")
+
+    @property
+    def minutes(self) -> int:
+        return int((self.fin - self.debut).total_seconds() // 60)
+
+
+@dataclass
+class Preferences:
+    duree_min_seance: int = 45  # minutes
+    duree_max_seance: int = 90
+    pause_min: int = 10
+    max_minutes_jour: int = 360  # 6 h de travail personnel par jour
+    debut_journee: time = time(7, 0)
+    fin_journee: time = time(23, 0)
+    # Repas bloqués chaque jour (None = désactivé). Le déjeuner inclut la
+    # petite pause qui suit le repas.
+    dejeuner_debut: time | None = time(12, 0)
+    dejeuner_fin: time | None = time(13, 0)
+    diner_debut: time | None = time(18, 0)
+    diner_fin: time | None = time(19, 0)
+    jours_repos: list[int] = field(default_factory=list)  # 0 = lundi
+    marge_echeance_heures: int = 12
+    horizon_semaines: int = 3
+
+    def __post_init__(self) -> None:
+        if not 0 < self.duree_min_seance <= self.duree_max_seance:
+            raise ValueError("Durées de séance incohérentes")
+        _ordre(self.debut_journee, self.fin_journee)
+        if self.pause_min < 0 or self.max_minutes_jour <= 0:
+            raise ValueError("Pause ou limite quotidienne invalide")
+        for debut, fin in self.repas:
+            _ordre(debut, fin)
+        if (self.dejeuner_debut is None) != (self.dejeuner_fin is None) or (
+            self.diner_debut is None
+        ) != (self.diner_fin is None):
+            raise ValueError("Un repas doit avoir un début et une fin")
+
+    @property
+    def repas(self) -> list[tuple[time, time]]:
+        """Plages de repas actives, dans l'ordre de la journée."""
+        plages = [
+            (self.dejeuner_debut, self.dejeuner_fin),
+            (self.diner_debut, self.diner_fin),
+        ]
+        return [(d, f) for d, f in plages if d is not None and f is not None]

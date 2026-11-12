@@ -1,0 +1,1 @@
+"""Planificateur personnel des études."""
