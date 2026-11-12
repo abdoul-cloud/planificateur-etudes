@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QMessageBox,
@@ -23,6 +24,7 @@ from .. import modeles as m
 from ..base import Base
 from ..moteur.creneaux import Intervalle, occurrences, periodes_occupees
 from ..moteur.placement import Resultat, planifier
+from ..suivi import marquer
 from . import theme
 from .commun import JOURS, LIBELLES, texte_duree
 from .theme import bouton_role, carte, en_tete, icone, police_icones, vider
@@ -303,9 +305,14 @@ class CalendrierSemaine(QWidget):
         fond = QColor(base)
         fond.setAlpha(40 if not deplacement else 90)
         terminee = s.statut in (m.StatutSeance.TERMINEE, m.StatutSeance.PARTIELLE)
+        manquee = s.statut is m.StatutSeance.MANQUEE
         p.save()
         if fantome:
             p.setOpacity(0.35)
+        elif manquee:
+            p.setOpacity(0.45)
+            base = QColor(theme.TEXTE_PALE)
+            fond = QColor(theme.FOND)
         elif terminee:
             p.setOpacity(0.6)
         chemin = QPainterPath()
@@ -317,6 +324,9 @@ class CalendrierSemaine(QWidget):
         if conflit:
             p.setPen(QPen(QColor(theme.DANGER), 2))
             p.drawPath(chemin)
+        elif manquee:
+            p.setPen(QPen(base, 1.2, Qt.PenStyle.DotLine))
+            p.drawPath(chemin)
         elif s.type is m.TypeSeance.PREPARATION:
             p.setPen(QPen(base, 1.4))
             p.drawPath(chemin)
@@ -325,8 +335,12 @@ class CalendrierSemaine(QWidget):
             p.drawPath(chemin)
         p.fillRect(QRectF(rect.left(), rect.top() + 3, 4, rect.height() - 6), base)
         type_texte = LIBELLES[s.type] if s.type is not m.TypeSeance.TRAVAIL else "Travail"
-        if terminee:
+        if s.statut is m.StatutSeance.TERMINEE:
             type_texte = "✓ " + type_texte
+        elif s.statut is m.StatutSeance.PARTIELLE:
+            type_texte = f"½ {type_texte} ({texte_duree(s.minutes_effectuees or 0)})"
+        elif manquee:
+            type_texte = "✗ Manquée"
         if conflit:
             type_texte = "⚠ " + type_texte
         couleur_texte = base.darker(170).name()
@@ -396,6 +410,10 @@ class CalendrierSemaine(QWidget):
         matiere = self.matieres.get(s.matiere_id)
         lignes = [f"{LIBELLES[s.type]} — {matiere.nom if matiere else ''}",
                   f"{s.debut:%H:%M} – {s.fin:%H:%M} ({texte_duree(s.minutes)})"]
+        statuts = {m.StatutSeance.TERMINEE: "Faite", m.StatutSeance.PARTIELLE: "Faite en partie",
+                   m.StatutSeance.MANQUEE: "Manquée (replanifiée ailleurs)"}
+        if s.statut in statuts:
+            lignes.append(statuts[s.statut])
         if s.verrouillee:
             lignes.append("Verrouillée : le recalcul ne la déplacera pas")
         if s.id in self.conflits:
@@ -509,6 +527,20 @@ class PagePlanning(QWidget):
         QVBoxLayout(self.alerte).addWidget(self.texte_alerte)
         self.alerte.hide()
 
+        self.bandeau = carte(ombre=False)
+        self.bandeau.setObjectName("bandeau")
+        ligne_bandeau = QHBoxLayout(self.bandeau)
+        ligne_bandeau.setContentsMargins(14, 8, 8, 8)
+        texte_bandeau = QLabel("Vos données ont changé depuis le dernier calcul.")
+        mettre_a_jour = bouton_role(QPushButton(icone("generer", "#FFFFFF"), " Mettre à jour le planning"), "primaire")
+        mettre_a_jour.clicked.connect(self.generer)
+        ligne_bandeau.addWidget(texte_bandeau, 1)
+        ligne_bandeau.addWidget(mettre_a_jour)
+        self.bandeau.hide()
+        self.message = QLabel()
+        self.message.setObjectName("pastille")
+        self.message.hide()
+
         self.calendrier = CalendrierSemaine()
         self.calendrier.seance_deplacee.connect(self.deplacer)
         self.calendrier.menu_seance.connect(self.ouvrir_menu)
@@ -525,6 +557,8 @@ class PagePlanning(QWidget):
         disposition.setSpacing(12)
         disposition.addWidget(entete)
         disposition.addLayout(ligne_infos)
+        disposition.addWidget(self.bandeau)
+        disposition.addWidget(self.message, 0, Qt.AlignmentFlag.AlignLeft)
         disposition.addWidget(self.alerte)
         disposition.addWidget(cadre, 1)
         self.rafraichir()
@@ -548,7 +582,7 @@ class PagePlanning(QWidget):
         exceptions = self.base.exceptions.lister()
         epreuves = [e for e in self.base.epreuves.lister() if debut <= e.debut < fin]
         seances = self.base.seances.lister("debut >= ? AND debut < ?", (debut.isoformat(timespec="minutes"), fin.isoformat(timespec="minutes")), ordre="debut")
-        seances = [s for s in seances if s.statut not in (m.StatutSeance.MANQUEE, m.StatutSeance.REPORTEE)]
+        seances = [s for s in seances if s.statut is not m.StatutSeance.REPORTEE]
         return activites, exceptions, epreuves, seances
 
     def conflits(self, activites, exceptions, epreuves, seances) -> set[int]:
@@ -556,7 +590,10 @@ class PagePlanning(QWidget):
         if not seances:
             return set()
         occupes = periodes_occupees(self.lundi, self.lundi + timedelta(days=6), activites, exceptions, epreuves)
-        return {s.id for s in seances if any(Intervalle(s.debut, s.fin).chevauche(o) for o in occupes)}
+        return {
+            s.id for s in seances
+            if s.statut is m.StatutSeance.PREVUE and any(Intervalle(s.debut, s.fin).chevauche(o) for o in occupes)
+        }
 
     def rafraichir(self) -> None:
         activites, exceptions, epreuves, seances = self._donnees_semaine()
@@ -569,9 +606,13 @@ class PagePlanning(QWidget):
         )
 
         vider(self.pastilles)
-        total = sum(s.minutes for s in seances)
-        self.pastilles.addWidget(_pastille(f"{len(seances)} séances"))
+        actives = [s for s in seances if s.statut is not m.StatutSeance.MANQUEE]
+        total = sum(s.minutes for s in actives)
+        faites = [s for s in seances if s.statut in (m.StatutSeance.TERMINEE, m.StatutSeance.PARTIELLE)]
+        self.pastilles.addWidget(_pastille(f"{len(actives)} séances"))
         self.pastilles.addWidget(_pastille(f"{texte_duree(total)} de travail"))
+        if faites:
+            self.pastilles.addWidget(_pastille(f"✓ {len(faites)} faite{'s' if len(faites) > 1 else ''}"))
         if epreuves:
             self.pastilles.addWidget(_pastille(f"{len(epreuves)} épreuve{'s' if len(epreuves) > 1 else ''}", danger=True))
         if conflits:
@@ -581,14 +622,28 @@ class PagePlanning(QWidget):
     def _afficher_alerte(self) -> None:
         resultat = self.dernier_resultat
         manques = [d for d in resultat.non_places if d.type is not m.TypeSeance.REVISION] if resultat else []
-        if not manques:
+        conflits = resultat.conflits if resultat else []
+        if not manques and not conflits:
             self.alerte.hide()
             return
-        lignes = [f"<b>Tout ne tient pas dans le temps disponible.</b> Il manque :"]
-        for d in manques:
-            retard = " — <b>échéance dépassée</b>" if d.en_retard else ""
-            lignes.append(f"• {d.intitule} : {texte_duree(d.minutes)}{retard}")
-        lignes.append("Libérez du temps (préférences, jours particuliers) ou réduisez une estimation, puis régénérez.")
+        lignes = []
+        if manques:
+            lignes.append("<b>Tout ne tient pas dans le temps disponible.</b> Il manque :")
+            for d in manques:
+                retard = " — <b>échéance dépassée</b>" if d.en_retard else ""
+                lignes.append(f"• {d.intitule} : {texte_duree(d.minutes)}{retard}")
+            lignes.append("Libérez du temps (préférences, jours particuliers) ou réduisez une estimation, puis régénérez.")
+        if conflits:
+            if lignes:
+                lignes.append("")
+            pluriel = len(conflits) > 1
+            lignes.append(
+                f"<b>{len(conflits)} séance{'s' if pluriel else ''} placée{'s' if pluriel else ''} à la main "
+                f"chevauche{'nt' if pluriel else ''} maintenant un cours ou une épreuve.</b>"
+            )
+            for s in conflits[:5]:
+                lignes.append(f"• {JOURS[s.debut.weekday()].lower()} {s.debut:%d/%m} {s.debut:%H:%M}–{s.fin:%H:%M} (marquée ⚠ dans le calendrier)")
+            lignes.append("Déplacez-les ou supprimez-les : elles ne sont jamais modifiées sans vous.")
         self.texte_alerte.setText("<br>".join(lignes))
         self.alerte.show()
 
@@ -598,6 +653,7 @@ class PagePlanning(QWidget):
         resultat = generer(self.base, maintenant if isinstance(maintenant, datetime) else None)
         enregistrer_resultat(self.base, resultat)
         self.dernier_resultat = resultat
+        self.bandeau.hide()
         self.rafraichir()
         self.donnees_modifiees.emit()
         return resultat
@@ -610,7 +666,8 @@ class PagePlanning(QWidget):
             return False
         activites, exceptions, epreuves, seances = self._donnees_semaine()
         occupes = periodes_occupees(debut.date(), debut.date(), activites, exceptions, self.base.epreuves.lister())
-        occupes += [Intervalle(s.debut, s.fin) for s in seances if s.id != seance.id]
+        occupes += [Intervalle(s.debut, s.fin) for s in seances
+                    if s.id != seance.id and s.statut is not m.StatutSeance.MANQUEE]
         cible = Intervalle(debut, fin)
         if any(cible.chevauche(o) for o in occupes):
             self.avertir(self, "Créneau occupé", "Ce créneau chevauche un cours, une épreuve ou une autre séance.")
@@ -624,14 +681,62 @@ class PagePlanning(QWidget):
 
     def ouvrir_menu(self, seance: m.Seance, position) -> None:
         menu = QMenu(self)
-        verrou = menu.addAction(icone("cadenas"), "Déverrouiller" if seance.verrouillee else "Verrouiller (ne plus déplacer)")
+        actions = {}
+        if seance.statut is not m.StatutSeance.TERMINEE:
+            actions[menu.addAction(icone("coche", theme.SUCCES), "Faite")] = "faite"
+        if seance.statut is not m.StatutSeance.PARTIELLE:
+            actions[menu.addAction("½   Faite en partie…")] = "partielle"
+        if seance.statut is not m.StatutSeance.MANQUEE:
+            actions[menu.addAction(icone("annuler", theme.DANGER), "Manquée — replanifier")] = "manquee"
+        if seance.statut is not m.StatutSeance.PREVUE:
+            actions[menu.addAction("↺   Remettre à « prévue »")] = "prevue"
         menu.addSeparator()
-        supprimer = menu.addAction(icone("supprimer", theme.DANGER), "Supprimer la séance")
-        choix = menu.exec(position)
-        if choix is verrou:
+        if seance.statut is m.StatutSeance.PREVUE:
+            texte = "Déverrouiller" if seance.verrouillee else "Verrouiller (ne plus déplacer)"
+            actions[menu.addAction(icone("cadenas"), texte)] = "verrou"
+        actions[menu.addAction(icone("supprimer", theme.DANGER), "Supprimer la séance")] = "supprimer"
+        choix = actions.get(menu.exec(position))
+        if choix == "faite":
+            self.pointer(seance, m.StatutSeance.TERMINEE)
+        elif choix == "partielle":
+            minutes, ok = QInputDialog.getInt(
+                self, "Faite en partie", "Minutes réellement travaillées :",
+                max(5, seance.minutes // 2), 5, max(5, seance.minutes - 5), 5,
+            )
+            if ok:
+                self.pointer(seance, m.StatutSeance.PARTIELLE, minutes)
+        elif choix == "manquee":
+            self.pointer(seance, m.StatutSeance.MANQUEE)
+        elif choix == "prevue":
+            self.pointer(seance, m.StatutSeance.PREVUE)
+        elif choix == "verrou":
             self.basculer_verrou(seance)
-        elif choix is supprimer:
+        elif choix == "supprimer":
             self.supprimer(seance)
+
+    def pointer(self, seance: m.Seance, statut: m.StatutSeance, minutes: int | None = None) -> None:
+        """Pointe une séance. Une séance manquée déclenche aussitôt la replanification."""
+        try:
+            marquer(self.base, seance, statut, minutes)
+        except ValueError as erreur:
+            self.avertir(self, "Saisie incorrecte", str(erreur))
+            return
+        if statut is m.StatutSeance.MANQUEE:
+            resultat = self.generer()
+            self.informer("Séance manquée : le planning a été recalculé"
+                          + ("" if resultat.faisable else " — tout ne tient plus, voir l'alerte"))
+            return
+        self.rafraichir()
+        self.donnees_modifiees.emit()
+
+    def informer(self, texte: str) -> None:
+        self.message.setText(f"✓  {texte}")
+        self.message.show()
+        QTimer.singleShot(4000, self.message.hide)
+
+    def signaler_changement(self) -> None:
+        """Les données ont changé ailleurs : proposer de recalculer."""
+        self.bandeau.show()
 
     def basculer_verrou(self, seance: m.Seance) -> None:
         self.base.seances.modifier(replace(seance, verrouillee=not seance.verrouillee))

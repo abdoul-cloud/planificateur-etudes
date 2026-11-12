@@ -112,6 +112,9 @@ class PageListe(QWidget):
     def couleur(self, objet) -> str | None:
         return None
 
+    def apres_enregistrement(self, formulaire, objet) -> None:
+        """Pour enregistrer ce qui dépend de l'objet (ex. sous-tâches)."""
+
     # Mécanique commune ------------------------------------------------------
 
     def matieres(self) -> list[m.Matiere]:
@@ -156,7 +159,8 @@ class PageListe(QWidget):
     def ajouter(self) -> None:
         formulaire = self._ouvrir()
         if formulaire and formulaire.exec():
-            self.depot.ajouter(formulaire.resultat)
+            objet = self.depot.ajouter(formulaire.resultat)
+            self.apres_enregistrement(formulaire, objet)
             self._modifie()
 
     def modifier(self) -> None:
@@ -167,6 +171,7 @@ class PageListe(QWidget):
         formulaire = self._ouvrir(objet)
         if formulaire and formulaire.exec():
             self.depot.modifier(formulaire.resultat)
+            self.apres_enregistrement(formulaire, formulaire.resultat)
             self._modifie()
 
     def supprimer(self) -> None:
@@ -314,7 +319,7 @@ class PageTravaux(PageListe):
         "Exercices, TD, rapports, projets, exposés… Indiquez le temps estimé ; "
         "s'il est déjà commencé, seul le temps restant est planifié."
     )
-    colonnes = ["Travail", "Matière", "À rendre le", "Reste à faire", "État"]
+    colonnes = ["Travail", "Matière", "À rendre le", "Reste à faire", "Étapes", "État"]
     texte_vide = "Aucun travail à rendre.\nAjoutez exercices, rapports, exposés… avec une estimation du temps."
 
     @property
@@ -324,11 +329,25 @@ class PageTravaux(PageListe):
     def elements(self):
         return self.base.travaux.lister(ordre="echeance")
 
+    def sous_taches(self, travail_id: int | None) -> list[m.SousTache]:
+        if travail_id is None:
+            return []
+        return self.base.sous_taches.lister("travail_id = ?", (travail_id,), ordre="ordre")
+
     def ligne(self, x: m.Travail):
+        etapes = self.sous_taches(x.id)
+        faites = sum(st.terminee for st in etapes)
         return [
             x.intitule, self.nom_matiere(x.matiere_id), texte_date_heure(x.echeance),
-            f"{texte_duree(x.minutes_restantes)} sur {texte_duree(x.minutes_estimees)}", LIBELLES[x.etat],
+            f"{texte_duree(x.minutes_restantes)} sur {texte_duree(x.minutes_estimees)}",
+            f"{faites} / {len(etapes)}" if etapes else "—", LIBELLES[x.etat],
         ]
 
     def formulaire(self, objet=None):
-        return FormulaireTravail(self.matieres(), objet, self)
+        return FormulaireTravail(self.matieres(), objet, self, self.sous_taches(objet.id if objet else None))
+
+    def apres_enregistrement(self, formulaire, travail: m.Travail) -> None:
+        for ancienne in self.sous_taches(travail.id):
+            self.base.sous_taches.supprimer(ancienne.id)
+        for etape in formulaire.etapes.valeurs(travail.id):
+            self.base.sous_taches.ajouter(etape)

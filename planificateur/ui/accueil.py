@@ -6,11 +6,20 @@ from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QGridLayout,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .. import modeles as m
 from ..base import Base
 from ..moteur.creneaux import occurrences
+from ..suivi import a_pointer, marquer
 from . import theme
 from .calendrier import MOIS, lundi_de
 from .commun import JOURS, LIBELLES, texte_duree
@@ -118,8 +127,79 @@ class _Liste(QWidget):
             self.contenu.addWidget(ligne)
 
 
+class _APointer(QWidget):
+    """Séances passées, pas encore pointées : faite, en partie ou manquée."""
+
+    pointe = Signal(object, object)  # séance, statut
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.cadre = carte()
+        colonne = QVBoxLayout(self.cadre)
+        colonne.setContentsMargins(20, 16, 20, 16)
+        colonne.setSpacing(10)
+        entete = QHBoxLayout()
+        titre = QLabel("À pointer")
+        titre.setObjectName("titreCarte")
+        self.compte = QLabel()
+        self.compte.setObjectName("pastille")
+        entete.addWidget(titre)
+        entete.addWidget(self.compte)
+        entete.addStretch()
+        aide = QLabel("Ces séances sont passées : dites ce que vous avez réellement fait. "
+                      "Une séance manquée est aussitôt replanifiée.")
+        aide.setObjectName("doux")
+        aide.setWordWrap(True)
+        colonne.addLayout(entete)
+        colonne.addWidget(aide)
+        self.contenu = QVBoxLayout()
+        self.contenu.setSpacing(6)
+        colonne.addLayout(self.contenu)
+        enveloppe = QVBoxLayout(self)
+        enveloppe.setContentsMargins(0, 0, 0, 0)
+        enveloppe.addWidget(self.cadre)
+
+    def definir(self, seances: list[m.Seance], matieres: dict[int, m.Matiere]) -> None:
+        vider(self.contenu)
+        self.compte.setText(str(len(seances)))
+        for s in seances[:5]:
+            matiere = matieres.get(s.matiere_id)
+            ligne = QWidget()
+            disposition = QHBoxLayout(ligne)
+            disposition.setContentsMargins(0, 2, 0, 2)
+            disposition.setSpacing(10)
+            barre = QLabel()
+            barre.setFixedSize(4, 34)
+            barre.setStyleSheet(f"background: {matiere.couleur if matiere else theme.ACCENT}; border-radius: 2px;")
+            textes = QVBoxLayout()
+            textes.setSpacing(0)
+            principal = QLabel(f"{matiere.nom if matiere else 'Séance'} · {LIBELLES[s.type]}")
+            principal.setStyleSheet("font-weight: 600;")
+            secondaire = QLabel(f"{_texte_jour(s.debut.date())}, {s.debut:%H:%M} – {s.fin:%H:%M}")
+            secondaire.setObjectName("doux")
+            textes.addWidget(principal)
+            textes.addWidget(secondaire)
+            disposition.addWidget(barre)
+            disposition.addLayout(textes, 1)
+            for texte, statut, role in (("✓  Faite", m.StatutSeance.TERMINEE, "primaire"),
+                                        ("½  En partie", m.StatutSeance.PARTIELLE, ""),
+                                        ("✗  Manquée", m.StatutSeance.MANQUEE, "danger")):
+                bouton = QPushButton(texte)
+                if role:
+                    bouton_role(bouton, role)
+                bouton.clicked.connect(lambda _=False, s=s, st=statut: self.pointe.emit(s, st))
+                disposition.addWidget(bouton)
+            self.contenu.addWidget(ligne)
+        if len(seances) > 5:
+            reste = QLabel(f"… et {len(seances) - 5} autre{'s' if len(seances) > 6 else ''}, à pointer aussi depuis le planning (clic droit).")
+            reste.setObjectName("pale")
+            self.contenu.addWidget(reste)
+
+
 class PageAccueil(QWidget):
     aller_a = Signal(str)
+    donnees_modifiees = Signal()
+    replanifier = Signal()
 
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(parent)
@@ -148,6 +228,9 @@ class PageAccueil(QWidget):
         statistiques.setSpacing(16)
         for s in (self.stat_jour, self.stat_semaine, self.stat_epreuve, self.stat_travaux):
             statistiques.addWidget(s, 1)
+
+        self.a_pointer = _APointer()
+        self.a_pointer.pointe.connect(self._pointer_depuis_bouton)
 
         self.liste_jour = _Liste("Programme du jour", "Rien de prévu aujourd'hui. Profitez-en, ou générez le planning.")
         self.liste_echeances = _Liste("Prochaines échéances", "Aucune épreuve ni travail à rendre dans les deux semaines.")
@@ -187,8 +270,27 @@ class PageAccueil(QWidget):
         disposition.addLayout(haut)
         disposition.addWidget(self.premiers_pas)
         disposition.addLayout(statistiques)
+        disposition.addWidget(self.a_pointer)
         disposition.addLayout(colonnes)
         disposition.addStretch(1)
+        self.rafraichir()
+
+    def _pointer_depuis_bouton(self, seance: m.Seance, statut: m.StatutSeance) -> None:
+        minutes = None
+        if statut is m.StatutSeance.PARTIELLE:
+            minutes, ok = QInputDialog.getInt(
+                self, "Faite en partie", "Minutes réellement travaillées :",
+                max(5, seance.minutes // 2), 5, max(5, seance.minutes - 5), 5,
+            )
+            if not ok:
+                return
+        self.pointer(seance, statut, minutes)
+
+    def pointer(self, seance: m.Seance, statut: m.StatutSeance, minutes: int | None = None) -> None:
+        marquer(self.base, seance, statut, minutes)
+        if statut is m.StatutSeance.MANQUEE:
+            self.replanifier.emit()
+        self.donnees_modifiees.emit()
         self.rafraichir()
 
     def rafraichir(self) -> None:
@@ -199,6 +301,9 @@ class PageAccueil(QWidget):
         self.date_du_jour.setText(_texte_jour(aujourd_hui).capitalize())
         matieres = {x.id: x for x in self.base.matieres.lister()}
         self.premiers_pas.setVisible(not matieres or not self.base.activites.lister())
+        en_attente = a_pointer(self.base, maintenant)
+        self.a_pointer.setVisible(bool(en_attente))
+        self.a_pointer.definir(en_attente, matieres)
 
         def seances_entre(debut: date, fin: date) -> list[m.Seance]:
             return [
@@ -246,9 +351,10 @@ class PageAccueil(QWidget):
                 programme.append((e.debut, theme.DANGER, f"⚑ {LIBELLES[e.type]} de {nom}", f"{e.debut:%H:%M} – {e.fin:%H:%M}", ""))
         for s in du_jour:
             matiere = matieres.get(s.matiere_id)
+            etiquette = {m.StatutSeance.TERMINEE: "✓ faite", m.StatutSeance.PARTIELLE: "½ en partie",
+                         m.StatutSeance.MANQUEE: "✗ manquée"}.get(s.statut, "")
             programme.append((s.debut, matiere.couleur if matiere else theme.ACCENT, matiere.nom if matiere else "Séance",
-                              f"{s.debut:%H:%M} – {s.fin:%H:%M} · {LIBELLES[s.type]}",
-                              "✓ fait" if s.statut is m.StatutSeance.TERMINEE else ""))
+                              f"{s.debut:%H:%M} – {s.fin:%H:%M} · {LIBELLES[s.type]}", etiquette))
         programme.sort(key=lambda x: x[0])
         self.liste_jour.definir([x[1:] for x in programme])
 

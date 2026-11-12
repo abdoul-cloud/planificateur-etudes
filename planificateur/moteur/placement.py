@@ -47,6 +47,7 @@ from .creneaux import (
     creneaux_libres,
     niveau_preference,
     occurrences,
+    periodes_occupees,
 )
 
 PREPARATION_BASE_MIN = 120  # épreuve moyenne, peu préparée → ~3 h 30
@@ -127,6 +128,9 @@ class Resultat:
     conservees: list[Seance]  # séances existantes gardées telles quelles
     retirees: list[Seance]  # anciennes séances automatiques remplacées
     non_places: list[Deficit]
+    # Séances gardées (manuelles, verrouillées) qui chevauchent désormais une
+    # activité fixe ou une épreuve : à signaler, jamais déplacées en silence.
+    conflits: list[Seance] = field(default_factory=list)
 
     @property
     def faisable(self) -> bool:
@@ -411,9 +415,9 @@ def planifier(
         if limite > fin_horizon:
             continue
         liees = [s for s in conservees if s.travail_id == t.id]
-        prevu = sum(
-            s.minutes for s in liees if s.statut is StatutSeance.PREVUE and s.debut >= maintenant
-        )
+        # Prévues à venir, ou passées mais pas encore pointées (supposées faites
+        # tant qu'elles ne sont pas marquées « manquées »).
+        prevu = sum(s.minutes for s in liees if s.statut is StatutSeance.PREVUE)
         besoin = _Besoin(
             TypeSeance.TRAVAIL, t.id, t.matiere_id, t.intitule, limite,
             max(0, t.minutes_restantes - prevu), t.importance, {s.debut.date() for s in liees},
@@ -435,9 +439,17 @@ def planifier(
 
     non_places += _placer_revisions(agenda, matieres, du, au, activites, exceptions)
 
+    occupes = periodes_occupees(du, au, activites, exceptions, epreuves)
+    conflits = [
+        s for s in conservees
+        if s.statut is StatutSeance.PREVUE and s.fin > maintenant
+        and any(Intervalle(s.debut, s.fin).chevauche(o) for o in occupes)
+    ]
+
     return Resultat(
         seances=sorted(agenda.nouvelles, key=lambda s: s.debut),
         conservees=conservees,
         retirees=retirees,
         non_places=non_places,
+        conflits=conflits,
     )

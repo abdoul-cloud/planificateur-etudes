@@ -32,25 +32,26 @@ BARRE_TEXTE = "#B4BAD3"
 
 # Glyphes de la police d'icônes Windows (Segoe Fluent Icons / MDL2 Assets).
 ICONES = {
-    "accueil": "",
-    "planning": "",
-    "emploi": "",
-    "matieres": "",
-    "epreuves": "",
-    "travaux": "",
-    "preferences": "",
-    "ajouter": "",
-    "modifier": "",
-    "supprimer": "",
-    "precedent": "",
-    "suivant": "",
-    "generer": "",
-    "cadenas": "",
-    "alerte": "",
-    "annuler": "",
-    "horloge": "",
-    "drapeau": "",
-    "coche": "",
+    "accueil": "\ue80f",
+    "planning": "\ue787",
+    "emploi": "\ue823",
+    "matieres": "\ue8f1",
+    "epreuves": "\ue7be",
+    "travaux": "\ue8a5",
+    "preferences": "\ue713",
+    "ajouter": "\ue710",
+    "modifier": "\ue70f",
+    "supprimer": "\ue74d",
+    "precedent": "\ue76b",
+    "suivant": "\ue76c",
+    "generer": "\ue768",
+    "cadenas": "\ue72e",
+    "alerte": "\ue7ba",
+    "annuler": "\ue711",
+    "horloge": "\ue823",
+    "drapeau": "\ue7c1",
+    "coche": "\ue73e",
+    "bilan": "\ue9d2",
 }
 
 
@@ -187,6 +188,8 @@ QLabel#vide {{ color: {TEXTE_DOUX}; font-size: 11pt; padding: 40px; }}
 QFrame#carte {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 12px; }}
 QFrame#alerte {{ background: {DANGER_PALE}; border: 1px solid #F5C2CD; border-radius: 10px; }}
 QFrame#alerte QLabel {{ color: #8A1C33; background: transparent; }}
+QFrame#bandeau {{ background: {ACCENT_PALE}; border: 1px solid #CDD2F7; border-radius: 10px; }}
+QFrame#bandeau QLabel {{ color: {ACCENT_FONCE}; background: transparent; font-weight: 600; }}
 QLabel#pastille {{
     background: {ACCENT_PALE}; color: {ACCENT_FONCE}; border-radius: 11px; padding: 3px 10px; font-weight: 600;
 }}
@@ -218,6 +221,8 @@ QPushButton[role="primaire"]:hover {{ background: {ACCENT_FONCE}; border-color: 
 QPushButton[role="danger"] {{ color: {DANGER}; }}
 QPushButton[role="danger"]:hover {{ background: {DANGER_PALE}; border-color: #F3B8C3; }}
 QPushButton[role="discret"] {{ border: none; background: transparent; padding: 6px 8px; }}
+QPushButton#segment {{ border-radius: 16px; padding: 6px 14px; }}
+QPushButton#segment:checked {{ background: {TEXTE}; border-color: {TEXTE}; color: white; font-weight: 600; }}
 QPushButton[role="discret"]:hover {{ background: #E9EBF3; }}
 
 /* Champs */

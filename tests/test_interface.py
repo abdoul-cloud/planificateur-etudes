@@ -352,3 +352,84 @@ def test_glisser_deposer_a_la_souris(application, base, maths):
     assert seance is bloc.seance
     assert debut - seance.debut == timedelta(hours=1)
     assert fin - debut == seance.fin - seance.debut
+
+
+# --- Étape 6 : pointage, sous-tâches, bilan --------------------------------
+
+
+def test_pointer_manquee_replanifie(application, base, maths):
+    _semaine_type(base, maths)
+    page = _page_planning(base)
+    page.generer(datetime(2026, 11, 16))
+    seance = page.calendrier.seances[0]
+    page.pointer(seance, m.StatutSeance.MANQUEE)
+    assert base.seances.obtenir(seance.id).statut is m.StatutSeance.MANQUEE
+    assert page.message.text().startswith("✓  Séance manquée")
+    assert not page.bandeau.isVisible()
+
+
+def test_bandeau_apres_changement_de_donnees(application, base, maths):
+    fenetre = FenetrePrincipale(base)
+    fenetre.show()
+    fenetre.afficher("Planning")
+    planning = fenetre.pages["Planning"]
+    assert not planning.bandeau.isVisible()
+    fenetre.pages["Matières"].donnees_modifiees.emit()
+    assert planning.bandeau.isVisible()
+    fenetre.close()
+
+
+def test_accueil_propose_de_pointer(application, base, maths):
+    travail = base.travaux.ajouter(m.Travail("Rapport", maths.id, datetime(2026, 11, 20, 18), 240))
+    seance = base.seances.ajouter(m.Seance(m.TypeSeance.TRAVAIL, datetime(2026, 11, 16, 19), datetime(2026, 11, 16, 20, 30),
+                                           matiere_id=maths.id, travail_id=travail.id))
+    accueil = PageAccueil(base)
+    accueil.maintenant = datetime(2026, 11, 17, 9)
+    accueil.show()
+    accueil.rafraichir()
+    assert accueil.a_pointer.isVisible()
+    assert accueil.a_pointer.compte.text() == "1"
+    accueil.pointer(seance, m.StatutSeance.TERMINEE)
+    assert not accueil.a_pointer.isVisible()
+    assert base.travaux.obtenir(travail.id).minutes_restantes == 150
+    accueil.close()
+
+
+def test_sous_taches_enregistrees(application, base, maths):
+    from planificateur.ui.pages import PageTravaux
+
+    page = PageTravaux(base)
+    travail = base.travaux.ajouter(m.Travail("Exposé", maths.id, datetime(2026, 11, 20, 18), 300))
+    formulaire = page.formulaire(travail)
+    formulaire.etapes.ajouter("Plan", True)
+    formulaire.etapes.ajouter("Diapositives", False)
+    formulaire.etapes.ajouter("   ", False)  # ligne vide ignorée
+    formulaire.resultat = formulaire.valeur()
+    page.apres_enregistrement(formulaire, travail)
+    etapes = page.sous_taches(travail.id)
+    assert [(e.intitule, e.terminee) for e in etapes] == [("Plan", True), ("Diapositives", False)]
+    page.rafraichir()
+    assert page.table.item(0, 4).text() == "1 / 2"
+    # rouvrir le formulaire montre les étapes, et les réenregistrer ne les duplique pas
+    formulaire = page.formulaire(travail)
+    assert len(formulaire.etapes.lignes) == 2
+    page.apres_enregistrement(formulaire, travail)
+    assert len(page.sous_taches(travail.id)) == 2
+
+
+def test_page_bilan(application, base, maths):
+    from planificateur.suivi import marquer
+    from planificateur.ui.bilan import PageBilan
+
+    _semaine_type(base, maths)
+    PagePlanning(base).generer(datetime(2026, 11, 16))
+    premiere = min(base.seances.lister(), key=lambda s: s.debut)
+    marquer(base, premiere, m.StatutSeance.TERMINEE)
+    page = PageBilan(base)
+    page.maintenant = datetime(2026, 11, 18, 12)
+    page.rafraichir()
+    assert page.stat_fait.valeur.text() == texte_duree(premiere.minutes)
+    assert page.barres.lignes and page.barres.lignes[0][0] == "Maths"
+    page.choisir("4 dernières semaines")
+    page.resize(1100, 800)
+    assert not page.grab().isNull()

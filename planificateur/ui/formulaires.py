@@ -341,10 +341,67 @@ class FormulaireEpreuve(Formulaire):
 # --------------------------------------------------------------------------
 
 
+class EditeurSousTaches(QWidget):
+    """Étapes d'un travail : une case à cocher et un intitulé par ligne."""
+
+    def __init__(self, sous_taches: list[m.SousTache], parent=None) -> None:
+        super().__init__(parent)
+        self.lignes: list[tuple[QWidget, QCheckBox, QLineEdit]] = []
+        self.colonne = QVBoxLayout(self)
+        self.colonne.setContentsMargins(0, 0, 0, 0)
+        self.colonne.setSpacing(4)
+        self.zone = QVBoxLayout()
+        self.zone.setSpacing(4)
+        self.colonne.addLayout(self.zone)
+        ajouter = QPushButton("+ Ajouter une étape")
+        ajouter.clicked.connect(lambda: self.ajouter("", False, focus=True))
+        self.colonne.addWidget(ajouter, 0, Qt.AlignmentFlag.AlignLeft)
+        for st in sorted(sous_taches, key=lambda x: x.ordre):
+            self.ajouter(st.intitule, st.terminee)
+
+    def ajouter(self, intitule: str, terminee: bool, focus: bool = False) -> None:
+        ligne = QWidget()
+        disposition = QHBoxLayout(ligne)
+        disposition.setContentsMargins(0, 0, 0, 0)
+        case = QCheckBox()
+        case.setChecked(terminee)
+        case.setToolTip("Étape terminée")
+        texte = QLineEdit(intitule)
+        texte.setPlaceholderText("ex. Rédiger l'introduction")
+        retirer = QPushButton("✕")
+        retirer.setFixedWidth(34)
+        retirer.setToolTip("Retirer cette étape")
+        element = (ligne, case, texte)
+        retirer.clicked.connect(lambda: self._retirer(element))
+        for w in (case, texte, retirer):
+            disposition.addWidget(w)
+        disposition.setStretch(1, 1)
+        self.zone.addWidget(ligne)
+        self.lignes.append(element)
+        if focus:
+            texte.setFocus()
+
+    def _retirer(self, element) -> None:
+        self.lignes.remove(element)
+        element[0].hide()
+        element[0].setParent(None)
+        element[0].deleteLater()
+
+    def valeurs(self, travail_id: int | None) -> list[m.SousTache]:
+        return [
+            m.SousTache(travail_id or 0, texte.text().strip(), case.isChecked(), ordre=n)
+            for n, (_, case, texte) in enumerate(self.lignes)
+            if texte.text().strip()
+        ]
+
+
 class FormulaireTravail(Formulaire):
     TYPES = ["Devoir", "TD à préparer", "Exercices", "Rapport", "Projet", "Exposé", "Compte rendu"]
 
-    def __init__(self, matieres: list[m.Matiere], travail: m.Travail | None = None, parent=None) -> None:
+    def __init__(
+        self, matieres: list[m.Matiere], travail: m.Travail | None = None, parent=None,
+        sous_taches: list[m.SousTache] | None = None,
+    ) -> None:
         super().__init__("Travail à rendre", parent)
         if not matieres:
             raise ValueError("Ajoutez d'abord une matière")
@@ -373,6 +430,7 @@ class FormulaireTravail(Formulaire):
         self.etat = _liste_enum(m.EtatTravail, travail.etat)
         self.notes = QPlainTextEdit(travail.notes)
         self.notes.setFixedHeight(60)
+        self.etapes = EditeurSousTaches(sous_taches or [])
 
         self.form.addRow("Intitulé *", self.intitule)
         self.form.addRow("Matière *", self.matiere)
@@ -384,6 +442,7 @@ class FormulaireTravail(Formulaire):
         self.form.addRow("Importance", self.importance)
         self.form.addRow("État", self.etat)
         self.form.addRow("Notes", self.notes)
+        self.form.addRow("Étapes", self.etapes)
 
         self.avec_cible.toggled.connect(self._actualiser)
         self.commence.toggled.connect(self._actualiser)

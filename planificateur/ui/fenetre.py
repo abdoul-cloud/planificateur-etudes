@@ -16,8 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 from ..base import Base
+from ..suivi import mettre_a_jour_etats
 from . import theme
 from .accueil import PageAccueil
+from .bilan import PageBilan
 from .calendrier import PagePlanning, generer  # noqa: F401  (generer réexporté)
 from .pages import PageEmploiDuTemps, PageEpreuves, PageMatieres, PageTravaux
 from .preferences import PagePreferences
@@ -27,6 +29,7 @@ from .theme import icone
 ECRANS = [
     ("Accueil", "accueil", "ORGANISER"),
     ("Planning", "planning", "ORGANISER"),
+    ("Bilan", "bilan", "ORGANISER"),
     ("Emploi du temps", "emploi", "MES DONNÉES"),
     ("Matières", "matieres", "MES DONNÉES"),
     ("Épreuves", "epreuves", "MES DONNÉES"),
@@ -41,6 +44,7 @@ class FenetrePrincipale(QMainWindow):
     def __init__(self, base: Base) -> None:
         super().__init__()
         self.base = base
+        mettre_a_jour_etats(base)
         self.setWindowTitle("Planificateur d'études")
         self.resize(1280, 820)
         self.setMinimumSize(1000, 640)
@@ -48,6 +52,7 @@ class FenetrePrincipale(QMainWindow):
         self.pages = {
             "Accueil": PageAccueil(base),
             "Planning": PagePlanning(base),
+            "Bilan": PageBilan(base),
             "Emploi du temps": PageEmploiDuTemps(base),
             "Matières": PageMatieres(base),
             "Épreuves": PageEpreuves(base),
@@ -126,7 +131,19 @@ class FenetrePrincipale(QMainWindow):
                 page.donnees_modifiees.connect(self.rafraichir_tout)
         self.pages["Préférences"].preferences_enregistrees.connect(self.rafraichir_tout)
         self.pages["Accueil"].aller_a.connect(self.afficher)
+        planning = self.pages["Planning"]
+        # Une donnée saisie ailleurs change : le planning propose de se mettre à jour.
+        for nom in ("Emploi du temps", "Matières", "Épreuves", "Travaux à rendre"):
+            self.pages[nom].donnees_modifiees.connect(planning.signaler_changement)
+        self.pages["Préférences"].preferences_enregistrees.connect(planning.signaler_changement)
+        self.pages["Accueil"].replanifier.connect(self._replanifier_depuis_accueil)
         self.afficher("Accueil")
+
+    def _replanifier_depuis_accueil(self) -> None:
+        planning = self.pages["Planning"]
+        resultat = planning.generer()
+        planning.informer("Séance manquée : le planning a été recalculé"
+                          + ("" if resultat.faisable else " — tout ne tient plus, voir l'alerte"))
 
     def rafraichir_tout(self) -> None:
         for page in self.pages.values():
@@ -136,6 +153,6 @@ class FenetrePrincipale(QMainWindow):
     def afficher(self, nom: str) -> None:
         self.boutons[nom].setChecked(True)
         page = self.pages[nom]
-        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning"):
+        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan"):
             page.rafraichir()
         self.pile.setCurrentWidget(page)
