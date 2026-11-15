@@ -607,3 +607,49 @@ def test_lecture_impossible_expliquee(application, remplie, synchrone, tmp_path)
     textes = [w.text() for w in page.fil.findChildren(QtWidgets.QLabel)]
     assert any("Aucun cours n'a été reconnu" in t for t in textes)
     assert page.bouton_envoyer.isEnabled()
+
+
+# --- Design de l'écran Assistant ------------------------------------------------------
+
+
+def test_accueil_puis_conversation(application, remplie, synchrone):
+    from planificateur.ui.assistant_page import _Tuile
+
+    faux = FauxGemini({"steps": [
+        {"type": "model_output", "content": [{"type": "text", "text": "Voici votre semaine."}]},
+        appel("ajouter_activite", nom="Sport", type="personnel", date="2026-11-19", debut="18:00", fin="19:00"),
+        appel("regenerer_planning"),
+    ]})
+    page = _page_assistant(remplie, faux)
+    assert page.accueil.isVisibleTo(page) and not page.defilement.isVisibleTo(page)
+    assert "connecté" in page.etat_connexion.text()
+    page.findChildren(_Tuile)[1].clique.emit()  # tuile « Résume ma semaine »
+    assert faux.envois and "Résume ma semaine" in faux.envois[0][1]["input"]
+    assert page.defilement.isVisibleTo(page) and not page.accueil.isVisibleTo(page)
+    assert page._ligne_attente is None  # l'indicateur « Gemini réfléchit » a disparu
+    sport, recalcul = page.cartes
+    sport.appliquer()
+    recalcul.ignorer()
+    assert sport.objectName() == "carteActionOk" and sport.etiquette.text() == "APPLIQUÉ"
+    assert recalcul.objectName() == "carteActionIgnoree" and not recalcul.appliquer_bouton.isVisibleTo(page)
+    page.recommencer()
+    assert page.accueil.isVisibleTo(page) and page.cartes == [] and page.historique == []
+
+
+def test_carte_en_echec(application, remplie, synchrone):
+    remplie.activites.ajouter(m.ActiviteFixe("Cours", time(18), time(20), date=date(2026, 11, 19)))
+    faux = FauxGemini({"steps": [appel("ajouter_activite", nom="Sport", type="personnel", date="2026-11-19",
+                                       debut="18:00", fin="19:00")]})
+    page = _page_assistant(remplie, faux)
+    page.envoyer("Ajoute du sport jeudi à 18 h")
+    assert not page.cartes[0].appliquer()
+    assert page.cartes[0].objectName() == "carteActionEchec" and "chevauche" in page.cartes[0].texte.text()
+
+
+def test_tuile_ajouter_une_epreuve_prepare_la_saisie(application, remplie):
+    from planificateur.ui.assistant_page import _Tuile
+
+    faux = FauxGemini()
+    page = _page_assistant(remplie, faux)
+    page.findChildren(_Tuile)[-1].clique.emit()
+    assert page.saisie.toPlainText().startswith("J'ai une épreuve") and not faux.envois

@@ -195,12 +195,70 @@ QLabel#vide {{ color: {TEXTE_DOUX}; font-size: 11pt; padding: 40px; }}
 QFrame#carte {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 12px; }}
 QFrame#alerte {{ background: {DANGER_PALE}; border: 1px solid #F5C2CD; border-radius: 10px; }}
 QFrame#alerte QLabel {{ color: #8A1C33; background: transparent; }}
-QFrame#bulleMoi {{ background: {ACCENT}; border-radius: 14px; }}
-QFrame#bulleMoi QLabel {{ color: white; background: transparent; }}
-QFrame#bulleIA {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 14px; }}
-QFrame#bulleIA QLabel {{ background: transparent; }}
-QFrame#carteAction {{ background: {ACCENT_PALE}; border: 1px solid #CDD2F7; border-radius: 12px; }}
-QFrame#carteAction QLabel {{ background: transparent; color: {TEXTE}; font-weight: 600; }}
+/* Assistant : panneau de conversation */
+QFrame#conversation {{ background: #F8F9FC; border: 1px solid {BORDURE}; border-radius: 16px; }}
+QScrollArea#filAssistant, QScrollArea#filAssistant > QWidget > QWidget {{ background: transparent; }}
+QFrame#conversation QWidget#defile {{ background: transparent; }}
+QLabel#avatarIA {{
+    border-radius: 16px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #6C78EE, stop: 1 {ACCENT_FONCE});
+}}
+QLabel#grandAvatar {{
+    border-radius: 32px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #7B86F2, stop: 1 {ACCENT_FONCE});
+}}
+QLabel#titreAccueil {{ font-family: "Segoe UI Variable Display", "Segoe UI"; font-size: 17pt; font-weight: 600; }}
+
+/* Bulles */
+QFrame#bulleMoi {{
+    border-radius: 16px; border-bottom-right-radius: 4px;
+    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1, stop: 0 #5C68E0, stop: 1 {ACCENT_FONCE});
+}}
+QFrame#bulleMoi QLabel {{ color: white; background: transparent; font-size: 10.5pt; }}
+QFrame#bulleMoi QLabel#heureBulle {{ color: rgba(255, 255, 255, 0.7); font-size: 8pt; }}
+QFrame#bulleIA {{
+    background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 16px; border-top-left-radius: 4px;
+}}
+QFrame#bulleIA QLabel {{ background: transparent; font-size: 10.5pt; }}
+QFrame#bulleIA QLabel#heureBulle {{ color: {TEXTE_PALE}; font-size: 8pt; }}
+QFrame#ligneAttente {{
+    background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 16px; border-top-left-radius: 4px;
+}}
+QLabel#texteAttente {{ color: {TEXTE_DOUX}; font-style: italic; background: transparent; }}
+
+/* Propositions */
+QFrame#carteAction, QFrame#carteActionOk, QFrame#carteActionIgnoree, QFrame#carteActionEchec {{
+    border-radius: 14px; border: 1px solid #CDD2F7; background: {SURFACE};
+}}
+QFrame#carteAction {{ border-left: 4px solid {ACCENT}; }}
+QFrame#carteActionOk {{ background: #EEFBF2; border: 1px solid #BFE8CC; border-left: 4px solid {SUCCES}; }}
+QFrame#carteActionIgnoree {{ background: #F5F6F9; border: 1px solid {BORDURE}; border-left: 4px solid #C3C8D6; }}
+QFrame#carteActionEchec {{ background: {DANGER_PALE}; border: 1px solid #F5C2CD; border-left: 4px solid {DANGER}; }}
+QLabel#pictoAction {{ background: {ACCENT_PALE}; border-radius: 10px; }}
+QFrame#carteActionOk QLabel#pictoAction {{ background: #D9F4E2; }}
+QFrame#carteActionIgnoree QLabel#pictoAction {{ background: #ECEEF3; }}
+QFrame#carteActionEchec QLabel#pictoAction {{ background: #FAD6DE; }}
+QLabel#etiquetteAction {{ color: {ACCENT}; font-size: 8pt; font-weight: 700; letter-spacing: 1px; background: transparent; }}
+QFrame#carteActionOk QLabel#etiquetteAction {{ color: {SUCCES}; }}
+QFrame#carteActionIgnoree QLabel#etiquetteAction {{ color: {TEXTE_PALE}; }}
+QFrame#carteActionEchec QLabel#etiquetteAction {{ color: {DANGER}; }}
+QLabel#texteAction {{ color: {TEXTE}; font-weight: 600; background: transparent; }}
+QFrame#carteActionIgnoree QLabel#texteAction {{ color: {TEXTE_DOUX}; font-weight: normal; }}
+
+/* Tuiles de l'accueil */
+QFrame#tuile {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 14px; }}
+QFrame#tuile:hover {{ border: 1px solid {ACCENT}; background: #FBFBFF; }}
+QLabel#titreTuile {{ font-weight: 600; background: transparent; }}
+QLabel#detailTuile {{ color: {TEXTE_DOUX}; font-size: 9pt; background: transparent; }}
+
+/* Zone de saisie */
+QFrame#composeur {{ background: {SURFACE}; border: 1px solid {BORDURE_CHAMP}; border-radius: 16px; }}
+QPlainTextEdit#saisieAssistant {{ border: none; background: transparent; padding: 2px; font-size: 10.5pt; }}
+QPlainTextEdit#saisieAssistant:focus {{ border: none; }}
+QLabel#pieceJointe {{
+    background: {ACCENT_PALE}; color: {ACCENT_FONCE}; border-radius: 10px; padding: 5px 10px; font-weight: 600;
+}}
+QPushButton#boutonEnvoyer {{ border-radius: 18px; padding: 8px 18px; }}
 QFrame#bandeau {{ background: {ACCENT_PALE}; border: 1px solid #CDD2F7; border-radius: 10px; }}
 QFrame#bandeau QLabel {{ color: {ACCENT_FONCE}; background: transparent; font-weight: 600; }}
 QLabel#pastille {{
