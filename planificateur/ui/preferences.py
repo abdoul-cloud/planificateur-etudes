@@ -213,6 +213,7 @@ class PagePreferences(QWidget):
         self.revisions = champ_minutes(300, 3000)
         self.repos_epreuve = champ_minutes(180, 1440)
         self.max_jour_epreuve = champ_minutes(120, 1440)
+        self.libre_apres = QCheckBox("Aucune séance après une épreuve, jusqu'au lendemain")
         self.marge = _nombre(12, 0, 168, " h")
         self.horizon = _nombre(3, 1, 12, " semaines")
         echeances = QGroupBox("Échéances et révisions")
@@ -220,6 +221,7 @@ class PagePreferences(QWidget):
         f.addRow("Révisions régulières par semaine", self.revisions)
         f.addRow("Repos avant une épreuve", self.repos_epreuve)
         f.addRow("Au plus, le jour d'une épreuve", self.max_jour_epreuve)
+        f.addRow("Après une épreuve", self.libre_apres)
         f.addRow("Finir un travail à rendre", _avec_texte(self.marge, "avant l'échéance"))
         f.addRow("Planifier sur", self.horizon)
 
@@ -293,6 +295,7 @@ class PagePreferences(QWidget):
         self.revisions.setValue(p.minutes_revision_semaine)
         self.repos_epreuve.setValue(p.repos_avant_epreuve_min)
         self.max_jour_epreuve.setValue(p.max_minutes_jour_epreuve)
+        self.libre_apres.setChecked(p.libre_apres_epreuve)
         self.marge.setValue(p.marge_echeance_heures)
         self.horizon.setValue(p.horizon_semaines)
 
@@ -324,6 +327,7 @@ class PagePreferences(QWidget):
             minutes_revision_semaine=self.revisions.value(),
             repos_avant_epreuve_min=self.repos_epreuve.value(),
             max_minutes_jour_epreuve=self.max_jour_epreuve.value(),
+            libre_apres_epreuve=self.libre_apres.isChecked(),
         )
 
     def recharger(self) -> None:

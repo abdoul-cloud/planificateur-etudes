@@ -129,3 +129,42 @@ def test_plages_garanties_enregistrees(tmp_path):
 def test_valeur_par_defaut():
     [plage] = m.Preferences().plages_garanties
     assert plage.jours == [0, 1, 2, 3, 4] and plage.debut == time(20) and plage.fin == time(23)
+
+
+# --- Soirée libre après une épreuve ----------------------------------------
+
+
+def test_aucune_seance_apres_une_composition_de_l_apres_midi():
+    epreuve = m.Epreuve(MATHS.id, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16), id=1)
+    res = planifier(LUNDI, SEMAINE_JOURS[-1], m.Preferences(), MATIERES, SEMAINE, epreuves=[epreuve])
+    jeudi = [s for s in res.seances if s.debut.date() == epreuve.debut.date()]
+    assert all(s.fin <= epreuve.debut for s in jeudi), "séance après la composition"
+    assert minutes_dans(res, epreuve.debut.date(), time(20), time(23)) == 0  # soirée garantie libérée
+    # les autres soirs restent remplis
+    assert minutes_dans(res, SEMAINE_JOURS[2], time(20), time(23)) >= 165
+
+
+def test_aucune_seance_apres_une_composition_du_soir():
+    epreuve = m.Epreuve(PHYSIQUE.id, datetime(2026, 11, 17, 18), datetime(2026, 11, 17, 20), id=1)
+    res = planifier(LUNDI, SEMAINE_JOURS[-1], m.Preferences(), MATIERES, SEMAINE, epreuves=[epreuve])
+    assert not [s for s in res.seances if s.debut >= epreuve.fin and s.debut.date() == epreuve.fin.date()]
+
+
+def test_le_lendemain_redevient_normal():
+    epreuve = m.Epreuve(MATHS.id, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16), id=1)
+    res = planifier(LUNDI, SEMAINE_JOURS[-1], m.Preferences(), MATIERES, SEMAINE, epreuves=[epreuve])
+    assert minutes_dans(res, SEMAINE_JOURS[4], time(20), time(23)) >= 165  # vendredi soir
+
+
+def test_option_desactivable():
+    epreuve = m.Epreuve(MATHS.id, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16), id=1)
+    preferences = m.Preferences(libre_apres_epreuve=False)
+    res = planifier(LUNDI, SEMAINE_JOURS[-1], preferences, MATIERES, SEMAINE, epreuves=[epreuve])
+    assert minutes_dans(res, epreuve.debut.date(), time(20), time(23)) >= 165
+
+
+def test_option_enregistree(tmp_path):
+    base = Base(tmp_path / "o.db")
+    base.enregistrer_preferences(m.Preferences(libre_apres_epreuve=False))
+    assert base.preferences().libre_apres_epreuve is False
+    base.fermer()

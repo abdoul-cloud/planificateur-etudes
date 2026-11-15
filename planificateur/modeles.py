@@ -297,6 +297,8 @@ class Preferences:
     # charge réduite le jour même.
     repos_avant_epreuve_min: int = 180
     max_minutes_jour_epreuve: int = 120
+    # Après une épreuve, plus aucune séance jusqu'au lendemain (soirée libre).
+    libre_apres_epreuve: bool = True
 
     def __post_init__(self) -> None:
         if self.minutes_revision_semaine < 0:

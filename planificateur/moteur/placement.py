@@ -7,7 +7,8 @@ Déroulement :
 2. On calcule les créneaux libres (étape 2).
 3. On sert les échéances — préparations d'épreuves et travaux à rendre — par
    ordre d'échéance, la plus proche d'abord.
-   Aucune séance juste avant une épreuve, charge réduite le jour même, et
+   Aucune séance juste avant une épreuve ni après elle le même jour, charge
+   réduite le jour même, et
    à préférence égale on choisit le jour le moins chargé.
    Les plages garanties (par défaut 20 h – 23 h du lundi au vendredi) sont
    choisies en premier.
@@ -511,6 +512,9 @@ def planifier(
     repos = timedelta(minutes=preferences.repos_avant_epreuve_min)
     for e in epreuves:
         agenda.bloquer(Intervalle(e.debut - repos, e.debut))
+        if preferences.libre_apres_epreuve:
+            # Rien après l'épreuve jusqu'au lendemain, plages garanties comprises.
+            agenda.bloquer(Intervalle(e.fin, datetime.combine(e.fin.date() + timedelta(days=1), time.min)))
 
     besoins: list[_Besoin] = []
     non_places: list[Deficit] = []

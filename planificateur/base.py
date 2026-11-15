@@ -133,7 +133,7 @@ def _preferences_depuis(donnees: dict) -> m.Preferences:
 
     def reglage(d: dict) -> m.ReglageJour:
         return m.ReglageJour(
-            d["travaille"], h(d["debut"]), h(d["fin"]), d["max_minutes"],
+            bool(d["travaille"]), h(d["debut"]), h(d["fin"]), d["max_minutes"],
             [plage(p) for p in d["pauses"]],
         )
 
@@ -142,6 +142,10 @@ def _preferences_depuis(donnees: dict) -> m.Preferences:
     for cle in ("debut_journee", "fin_journee"):
         if cle in d:
             d[cle] = h(d[cle])
+    types = get_type_hints(m.Preferences)
+    for cle, valeur in list(d.items()):
+        if types.get(cle) is bool:
+            d[cle] = bool(valeur)  # les booléens sont enregistrés en 0 / 1
     if "pauses_quotidiennes" in d:
         d["pauses_quotidiennes"] = [plage(p) for p in d["pauses_quotidiennes"]]
     if "reglages_jour" in d:
