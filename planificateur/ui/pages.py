@@ -204,7 +204,7 @@ class PageMatieres(PageListe):
         "La difficulté et la maîtrise (de 1 à 5) servent à répartir les révisions : "
         "une matière difficile et peu maîtrisée reçoit plus de temps."
     )
-    colonnes = ["Matière", "Code", "Coefficient", "Difficulté", "Maîtrise"]
+    colonnes = ["Matière", "Code", "Coefficient", "Difficulté", "Maîtrise", "État"]
     texte_vide = "Aucune matière pour l'instant.\nCommencez par ajouter vos matières : tout le reste s'y rattache."
 
     @property
@@ -214,14 +214,85 @@ class PageMatieres(PageListe):
     def elements(self):
         return self.base.matieres.lister(ordre="nom")
 
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__(base, parent)
+        # Remplaçables dans les tests (aucune fenêtre bloquante)
+        self.choisir_suppression = self._demander_suppression
+
+    def elements(self):
+        # Les matières en cours d'abord, les terminées ensuite
+        return sorted(self.base.matieres.lister(ordre="nom"), key=lambda x: x.terminee)
+
     def ligne(self, x: m.Matiere):
-        return [x.nom, x.code, f"{x.coefficient:g}", f"{x.difficulte} / 5", f"{x.maitrise} / 5"]
+        etat = "Terminée — plus de révisions" if x.terminee else "En cours"
+        return [x.nom, x.code, f"{x.coefficient:g}", f"{x.difficulte} / 5", f"{x.maitrise} / 5", etat]
 
     def couleur(self, x: m.Matiere):
-        return x.couleur
+        return "#C3C8D6" if x.terminee else x.couleur
 
     def formulaire(self, objet=None):
         return FormulaireMatiere(objet, self)
+
+    # --- Suppression guidée ----------------------------------------------------
+
+    def utilisations(self, matiere: m.Matiere) -> dict[str, int]:
+        cle = ("matiere_id = ?", (matiere.id,))
+        return {
+            "épreuve(s)": len(self.base.epreuves.lister(*cle)),
+            "travail(aux) à rendre": len(self.base.travaux.lister(*cle)),
+            "cours / activité(s)": len(self.base.activites.lister(*cle)),
+            "séance(s)": len(self.base.seances.lister(*cle)),
+        }
+
+    def supprimer(self) -> None:
+        matiere = self.selection()
+        if matiere is None:
+            QMessageBox.information(self, self.titre, "Sélectionnez d'abord une ligne.")
+            return
+        usages = {k: v for k, v in self.utilisations(matiere).items() if v}
+        if not usages:
+            super().supprimer()
+            return
+        choix = self.choisir_suppression(matiere, usages)
+        if choix == "terminer":
+            self.marquer_terminee(matiere)
+        elif choix == "tout":
+            self.supprimer_avec_tout(matiere)
+
+    def _demander_suppression(self, matiere: m.Matiere, usages: dict[str, int]) -> str | None:
+        detail = ", ".join(f"{n} {nom}" for nom, n in usages.items())
+        boite = QMessageBox(self)
+        boite.setWindowTitle("Cette matière est encore utilisée")
+        boite.setIcon(QMessageBox.Icon.Question)
+        boite.setText(f"« {matiere.nom} » est liée à : {detail}.")
+        boite.setInformativeText(
+            "Si elle est finie, marquez-la « terminée » : le planning ne la proposera plus, "
+            "et son historique (bilan, devoirs passés) est gardé.\n\n"
+            "« Tout supprimer » efface aussi ses épreuves, travaux, cours et séances. C'est définitif."
+        )
+        terminer = boite.addButton("Marquer terminée", QMessageBox.ButtonRole.AcceptRole)
+        tout = boite.addButton("Tout supprimer", QMessageBox.ButtonRole.DestructiveRole)
+        boite.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+        boite.setDefaultButton(terminer)
+        boite.exec()
+        if boite.clickedButton() is terminer:
+            return "terminer"
+        if boite.clickedButton() is tout:
+            return "tout"
+        return None
+
+    def marquer_terminee(self, matiere: m.Matiere) -> None:
+        matiere.terminee = True
+        self.base.matieres.modifier(matiere)
+        self._modifie()
+
+    def supprimer_avec_tout(self, matiere: m.Matiere) -> None:
+        cle = ("matiere_id = ?", (matiere.id,))
+        for depot in (self.base.seances, self.base.epreuves, self.base.travaux, self.base.activites):
+            for objet in depot.lister(*cle):
+                depot.supprimer(objet.id)
+        self.base.matieres.supprimer(matiere.id)
+        self._modifie()
 
 
 class PageEmploiDuTemps(PageListe):

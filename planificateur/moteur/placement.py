@@ -557,6 +557,8 @@ def planifier(
     les préférences.
     """
     matieres, activites, exceptions = list(matieres), list(activites), list(exceptions)
+    # Une matière terminée ne reçoit plus de révisions (ses échéances restent servies).
+    matieres = [x for x in matieres if not x.terminee]
     epreuves, travaux = list(epreuves), list(travaux)
     maintenant = maintenant or datetime.combine(du, time.min)
     fin_horizon = datetime.combine(au + timedelta(days=1), time.min)

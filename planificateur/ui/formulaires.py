@@ -138,6 +138,8 @@ class FormulaireMatiere(Formulaire):
         self.notes = QPlainTextEdit(matiere.notes)
         self.notes.setPlaceholderText("Chapitres, remarques…")
         self.notes.setFixedHeight(70)
+        self.terminee = QCheckBox("Matière terminée : plus aucune révision (l'historique est gardé)")
+        self.terminee.setChecked(matiere.terminee)
 
         self.form.addRow("Nom *", self.nom)
         self.form.addRow("Code", self.code)
@@ -146,6 +148,7 @@ class FormulaireMatiere(Formulaire):
         self.form.addRow("Maîtrise actuelle", _ligne(self.maitrise, "1 = pas du tout, 5 = très bien"))
         self.form.addRow("Couleur", _ligne(self.bouton_couleur))
         self.form.addRow("Notes", self.notes)
+        self.form.addRow("", self.terminee)
 
     def _afficher_couleur(self) -> None:
         self.bouton_couleur.setText(self.couleur)
@@ -166,6 +169,7 @@ class FormulaireMatiere(Formulaire):
             maitrise=self.maitrise.value(),
             couleur=self.couleur,
             notes=self.notes.toPlainText().strip(),
+            terminee=self.terminee.isChecked(),
             id=self._id,
         )
 

@@ -15,11 +15,12 @@ from . import modeles as m
 
 T = TypeVar("T")
 
-VERSION_SCHEMA = 2
+VERSION_SCHEMA = 3
 _SCHEMA = Path(__file__).with_name("schema.sql")  # version 1
 
 # Chaque migration fait passer la base de la version précédente à la clé.
 MIGRATIONS = {
+    3: "ALTER TABLE matieres ADD COLUMN terminee INTEGER NOT NULL DEFAULT 0;",
     2: "ALTER TABLE epreuves ADD COLUMN minutes_preparation INTEGER "
     "CHECK (minutes_preparation IS NULL OR minutes_preparation > 0);",
 }

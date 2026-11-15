@@ -78,6 +78,7 @@ class Matiere:
     maitrise: int = 3  # 1 = pas maîtrisée, 5 = très bien maîtrisée
     couleur: str = "#4C72B0"
     notes: str = ""
+    terminee: bool = False  # matière finie : plus aucune révision, historique conservé
     id: int | None = None
 
     def __post_init__(self) -> None:
