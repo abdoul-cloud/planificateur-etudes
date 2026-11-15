@@ -228,6 +228,11 @@ class Plage:
         _ordre(self.debut, self.fin)
 
 
+def _plages_garanties_par_defaut() -> list["PlageHebdo"]:
+    # Du lundi au vendredi, de 20 h à 23 h : toujours du travail personnel.
+    return [PlageHebdo([0, 1, 2, 3, 4], time(20), time(23))]
+
+
 def _pauses_par_defaut() -> list[Plage]:
     # Le déjeuner inclut la petite pause qui suit le repas.
     return [Plage(time(12), time(13), "Déjeuner"), Plage(time(18), time(19), "Dîner")]
@@ -279,6 +284,10 @@ class Preferences:
     # évitées qu'en dernier recours.
     plages_preferees: list[PlageHebdo] = field(default_factory=list)
     plages_evitees: list[PlageHebdo] = field(default_factory=list)
+    # Plages garanties : remplies de séances dès qu'elles sont libres (seuls les
+    # activités fixes, épreuves, pauses et le sommeil passent avant), même au-delà
+    # du budget de révisions et de la limite du jour.
+    plages_garanties: list[PlageHebdo] = field(default_factory=_plages_garanties_par_defaut)
     marge_echeance_heures: int = 12
     horizon_semaines: int = 3
     # Révisions régulières : temps visé par semaine, placé seulement s'il

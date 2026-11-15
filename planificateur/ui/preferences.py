@@ -168,18 +168,18 @@ class PagePreferences(QWidget):
         self.fin_journee = champ_heure(time(23))
         self.max_jour = champ_minutes(360, 1440, minimum=15)
         self.pauses = EditeurPlages()
-        journee = QGroupBox("Journée type")
+        journee = QGroupBox("Journée type et sommeil")
         f = QFormLayout(journee)
         horaires = QHBoxLayout()
-        for w in (QLabel("de"), self.debut_journee, QLabel("à"), self.fin_journee):
+        for w in (QLabel("lever"), self.debut_journee, QLabel("coucher"), self.fin_journee):
             horaires.addWidget(w)
         horaires.addStretch()
-        f.addRow("Travail possible", horaires)
+        f.addRow("Éveillé", horaires)
         f.addRow("Au plus, par jour", self.max_jour)
         f.addRow("Pauses de chaque jour", self.pauses)
 
         # Jours particuliers
-        self.table_jours = tableau(["Jour", "Particulier", "Travail", "Début", "Fin", "Limite", "Pauses"])
+        self.table_jours = tableau(["Jour", "Particulier", "Travail", "Lever", "Coucher", "Limite", "Pauses"])
         self.table_jours.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_jours.setRowCount(7)
         self.lignes_jours = []
@@ -197,10 +197,12 @@ class PagePreferences(QWidget):
         # Moments préférés / évités
         self.preferees = EditeurPlagesHebdo()
         self.evitees = EditeurPlagesHebdo()
-        moments = QGroupBox("Moments préférés et moments à éviter")
-        disposition_moments = QHBoxLayout(moments)
-        disposition_moments.setSpacing(18)
-        for libelle, editeur in (("Préférés : choisis en premier", self.preferees),
+        self.garanties = EditeurPlagesHebdo()
+        moments = QGroupBox("Moments de travail : garantis, préférés, à éviter")
+        disposition_moments = QVBoxLayout(moments)
+        disposition_moments.setSpacing(14)
+        for libelle, editeur in (("Garantis : toujours remplis de travail (sauf activité, pause ou sommeil) — par défaut du lundi au vendredi, 20 h – 23 h", self.garanties),
+                                 ("Préférés : choisis en premier", self.preferees),
                                  ("À éviter : utilisés seulement si nécessaire", self.evitees)):
             bloc = QVBoxLayout()
             bloc.addWidget(QLabel(libelle))
@@ -287,6 +289,7 @@ class PagePreferences(QWidget):
             ligne.definir(p.reglages_jour.get(ligne.jour))
         self.preferees.definir(p.plages_preferees)
         self.evitees.definir(p.plages_evitees)
+        self.garanties.definir(p.plages_garanties)
         self.revisions.setValue(p.minutes_revision_semaine)
         self.repos_epreuve.setValue(p.repos_avant_epreuve_min)
         self.max_jour_epreuve.setValue(p.max_minutes_jour_epreuve)
@@ -315,6 +318,7 @@ class PagePreferences(QWidget):
             reglages_jour=reglages,
             plages_preferees=self.preferees.valeurs(),
             plages_evitees=self.evitees.valeurs(),
+            plages_garanties=self.garanties.valeurs(),
             marge_echeance_heures=self.marge.value(),
             horizon_semaines=self.horizon.value(),
             minutes_revision_semaine=self.revisions.value(),

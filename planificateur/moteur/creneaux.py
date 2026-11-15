@@ -163,15 +163,16 @@ def creneaux_libres(
     return libres
 
 
-PREFEREE, NEUTRE, EVITEE = 1, 0, -1
+GARANTIE, PREFEREE, NEUTRE, EVITEE = 2, 1, 0, -1
 
 
 def niveau_preference(intervalle: Intervalle, preferences: Preferences) -> int:
-    """Classe une séance possible : évitée, neutre ou préférée.
+    """Classe une séance possible : garantie, préférée, neutre ou évitée.
 
-    Une séance qui touche une plage évitée est évitée, même si elle est aussi
-    dans une plage préférée. Elle n'est préférée que si elle tient entièrement
-    dans une plage préférée.
+    Une séance entièrement dans une plage garantie passe avant tout. Sinon,
+    une séance qui touche une plage évitée est évitée, même si elle est aussi
+    dans une plage préférée ; elle n'est préférée que si elle tient
+    entièrement dans une plage préférée.
     """
     jour = intervalle.debut.date()
 
@@ -182,6 +183,11 @@ def niveau_preference(intervalle: Intervalle, preferences: Preferences) -> int:
                     datetime.combine(jour, p.debut), datetime.combine(jour, p.fin)
                 )
 
+    if any(
+        p.debut <= intervalle.debut and intervalle.fin <= p.fin
+        for p in plages(preferences.plages_garanties)
+    ):
+        return GARANTIE
     if any(intervalle.chevauche(p) for p in plages(preferences.plages_evitees)):
         return EVITEE
     if any(

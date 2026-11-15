@@ -266,7 +266,12 @@ QCheckBox::indicator:checked:disabled {{ background: #B9BFE8; border-color: #B9B
 QRadioButton::indicator {{
     width: 16px; height: 16px; border: 1.5px solid #B9BFCD; border-radius: 9px; background: {SURFACE};
 }}
-QRadioButton::indicator:checked {{ border: 5px solid {ACCENT}; }}
+QRadioButton::indicator:hover {{ border-color: {ACCENT}; }}
+QRadioButton::indicator:checked {{
+    border: 1.5px solid {ACCENT};
+    background: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5,
+                                stop: 0 {ACCENT}, stop: 0.42 {ACCENT}, stop: 0.5 {SURFACE}, stop: 1 {SURFACE});
+}}
 QComboBox QAbstractItemView {{
     background: {SURFACE}; border: 1px solid {BORDURE}; selection-background-color: {ACCENT_PALE};
     selection-color: {TEXTE}; outline: none; padding: 4px;

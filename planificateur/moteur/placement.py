@@ -9,9 +9,13 @@ Déroulement :
    ordre d'échéance, la plus proche d'abord.
    Aucune séance juste avant une épreuve, charge réduite le jour même, et
    à préférence égale on choisit le jour le moins chargé.
-4. S'il reste de la place sous la limite de chaque jour, on ajoute les
+   Les plages garanties (par défaut 20 h – 23 h du lundi au vendredi) sont
+   choisies en premier.
+4. Les plages garanties encore libres sont remplies : d'abord avec ce qui
+   manque aux échéances, puis avec des révisions, même au-delà du budget.
+5. S'il reste de la place sous la limite de chaque jour, on ajoute les
    révisions régulières, dans la limite du budget hebdomadaire.
-5. Ce qui ne tient pas est renvoyé dans `non_places`, avec les minutes
+6. Ce qui ne tient pas est renvoyé dans `non_places`, avec les minutes
    manquantes : rien n'est entassé au-delà des limites.
 
 Ce sont des règles pratiques, simples et réglables, pas une vérité
@@ -221,19 +225,42 @@ class _Agenda:
             duree = min(duree, a_faire - p.duree_min_seance)
         return duree
 
+    def _departs(self, libre: Intervalle) -> list[datetime]:
+        """Débuts de séance à essayer dans un créneau libre.
+
+        Le début du créneau, mais aussi le début de chaque plage garantie ou
+        préférée qui tombe dedans, et la fin de chaque plage à éviter : sans
+        cela, une plage de 20 h dans un créneau libre de 19 h à 23 h ne serait
+        jamais choisie.
+        """
+        jour = libre.debut.date()
+        departs = {libre.debut}
+        for plage in [*self.p.plages_garanties, *self.p.plages_preferees]:
+            if jour.weekday() in plage.jours:
+                instant = datetime.combine(jour, plage.debut)
+                if libre.debut < instant < libre.fin:
+                    departs.add(instant)
+        for plage in self.p.plages_evitees:
+            if jour.weekday() in plage.jours:
+                instant = datetime.combine(jour, plage.fin)
+                if libre.debut < instant < libre.fin:
+                    departs.add(instant)
+        return sorted(departs)
+
     def candidats(self, a_faire: int, avant: datetime, apres: datetime | None = None):
-        """Séances possibles, une par créneau libre, commençant au plus tôt."""
+        """Séances possibles dans les créneaux libres (plusieurs débuts par créneau)."""
         for libre in self.libres:
-            debut = arrondir_grille(libre.debut, vers_le_haut=True)
-            if apres is not None and debut < apres:
-                continue
-            fin = min(libre.fin, avant)
-            if fin <= debut:
-                continue
-            place = min(int((fin - debut).total_seconds() // 60), self.reste_du_jour(debut.date()))
-            duree = self.duree(a_faire, place)
-            if duree:
-                yield Intervalle(debut, debut + timedelta(minutes=duree))
+            for depart in self._departs(libre):
+                debut = arrondir_grille(depart, vers_le_haut=True)
+                if apres is not None:
+                    debut = max(debut, arrondir_grille(apres, vers_le_haut=True))
+                fin = min(libre.fin, avant)
+                if fin <= debut:
+                    continue
+                place = min(int((fin - debut).total_seconds() // 60), self.reste_du_jour(debut.date()))
+                duree = self.duree(a_faire, place)
+                if duree:
+                    yield Intervalle(debut, debut + timedelta(minutes=duree))
 
     def placer(self, creneau: Intervalle, **attributs) -> Seance:
         seance = Seance(debut=creneau.debut, fin=creneau.fin, origine=Origine.AUTO, **attributs)
@@ -291,7 +318,12 @@ def _placer_revisions(
     while debut_semaine <= au:
         fin_semaine = min(au, debut_semaine + timedelta(days=6))
         jours = (fin_semaine - debut_semaine).days + 1
-        nombre = int(p.minutes_revision_semaine * jours / 7) // duree
+        budget = int(p.minutes_revision_semaine * jours / 7)
+        deja = sum(
+            s.minutes for s in agenda.nouvelles
+            if s.type is TypeSeance.REVISION and debut_semaine <= s.debut.date() <= fin_semaine
+        )
+        nombre = max(0, budget - deja) // duree
         repartition = repartir_revisions(nombre, matieres)
         limite = datetime.combine(fin_semaine + timedelta(days=1), time.min)
         apres = datetime.combine(debut_semaine, time.min)
@@ -324,6 +356,96 @@ def _placer_revisions(
         Deficit(TypeSeance.REVISION, mid, f"Révision {noms[mid]}", minutes)
         for mid, minutes in manques.items()
     ]
+
+
+def _decouper(minutes: int, p: Preferences) -> int:
+    """Durée de la prochaine séance pour remplir `minutes` sans laisser un reste inutilisable."""
+    if minutes <= p.duree_max_seance:
+        return minutes
+    # Deux séances au moins : on évite un reste plus court qu'une séance minimale.
+    reste = minutes - p.duree_max_seance - p.pause_min
+    if 0 < reste < p.duree_min_seance:
+        return _minutes_grille((minutes - p.pause_min) / 2, vers_le_haut=False)
+    return p.duree_max_seance
+
+
+def _remplir_plages_garanties(
+    agenda: _Agenda,
+    besoins: list[_Besoin],
+    matieres: list[Matiere],
+    du: date,
+    au: date,
+    activites: list[ActiviteFixe],
+    exceptions: list[ExceptionActivite],
+    maintenant: datetime,
+) -> None:
+    """Remplit chaque morceau libre des plages garanties.
+
+    Priorité : le reste des échéances (préparations, travaux) dont la date
+    limite est après la séance, puis des révisions choisies selon le poids des
+    matières, de préférence 1 à 2 jours après le cours. La limite du jour et
+    le budget de révisions ne s'appliquent pas ici : c'est le principe même
+    d'une plage garantie.
+    """
+    p = agenda.p
+    if not p.plages_garanties:
+        return
+    apres_cours: dict[int, set[date]] = defaultdict(set)
+    for activite, horaire in occurrences(activites, du - timedelta(days=2), au, exceptions):
+        if activite.matiere_id is not None:
+            jour = horaire.debut.date()
+            apres_cours[activite.matiere_id] |= {jour + timedelta(days=1), jour + timedelta(days=2)}
+    compte: dict[int, int] = defaultdict(int)  # séances de révision garanties par matière (équilibre)
+
+    jour = du
+    while jour <= au:
+        revisees_ce_jour: set[int] = set()
+        for plage in p.plages_garanties:
+            if jour.weekday() not in plage.jours:
+                continue
+            zone = Intervalle(datetime.combine(jour, plage.debut), datetime.combine(jour, plage.fin))
+            while True:
+                morceaux = [
+                    Intervalle(max(l.debut, zone.debut), min(l.fin, zone.fin))
+                    for l in agenda.libres
+                    if l.chevauche(zone)
+                ]
+                morceaux = [
+                    Intervalle(arrondir_grille(x.debut, vers_le_haut=True), x.fin)
+                    for x in morceaux
+                ]
+                morceaux = [x for x in morceaux if x.debut >= maintenant and x.minutes >= p.duree_min_seance]
+                if not morceaux:
+                    break
+                morceau = min(morceaux)
+                duree = _decouper(_minutes_grille(morceau.minutes, vers_le_haut=False), p)
+                creneau = Intervalle(morceau.debut, morceau.debut + timedelta(minutes=duree))
+
+                besoin = next(
+                    (b for b in besoins if b.minutes > 0 and b.echeance >= creneau.fin), None
+                )
+                if besoin is not None:
+                    duree = min(duree, _minutes_grille(besoin.minutes))
+                    creneau = Intervalle(creneau.debut, creneau.debut + timedelta(minutes=duree))
+                    cible = {"epreuve_id" if besoin.type is TypeSeance.PREPARATION else "travail_id": besoin.reference_id}
+                    seance = agenda.placer(creneau, type=besoin.type, matiere_id=besoin.matiere_id, **cible)
+                    besoin.minutes = max(0, besoin.minutes - seance.minutes)
+                    besoin.jours_utilises.add(jour)
+                    continue
+                if not matieres:
+                    agenda.bloquer(creneau)  # rien à réviser : on laisse le temps libre
+                    continue
+                matiere = max(
+                    matieres,
+                    key=lambda m: (
+                        m.id not in revisees_ce_jour,
+                        poids_matiere(m) * (1.5 if jour in apres_cours[m.id] else 1) / (compte[m.id] + 1),
+                    ),
+                )
+                agenda.placer(creneau, type=TypeSeance.REVISION, matiere_id=matiere.id)
+                compte[matiere.id] += 1
+                revisees_ce_jour.add(matiere.id)
+        jour += timedelta(days=1)
 
 
 def _a_conserver(seance: Seance, maintenant: datetime) -> bool:
@@ -431,10 +553,12 @@ def planifier(
 
     besoins.sort(key=lambda b: (b.echeance, -b.importance))
     for besoin in besoins:
-        manque = _placer_besoin(agenda, besoin)
-        if manque:
+        besoin.minutes = _placer_besoin(agenda, besoin)
+    _remplir_plages_garanties(agenda, besoins, matieres, du, au, activites, exceptions, maintenant)
+    for besoin in besoins:
+        if besoin.minutes:
             non_places.append(
-                Deficit(besoin.type, besoin.reference_id, besoin.intitule, manque, besoin.echeance)
+                Deficit(besoin.type, besoin.reference_id, besoin.intitule, besoin.minutes, besoin.echeance)
             )
 
     non_places += _placer_revisions(agenda, matieres, du, au, activites, exceptions)

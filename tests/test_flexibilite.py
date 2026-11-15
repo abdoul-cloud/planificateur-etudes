@@ -96,6 +96,7 @@ def test_niveaux_de_preference():
     prefs = m.Preferences(
         plages_preferees=[m.PlageHebdo([0, 1, 2, 3, 4], time(19), time(22))],
         plages_evitees=[m.PlageHebdo([0, 1, 2, 3, 4], time(21, 30), time(23))],
+        plages_garanties=[],
     )
     assert niveau_preference(Intervalle(h(LUNDI, 19), h(LUNDI, 20, 30)), prefs) == PREFEREE
     assert niveau_preference(Intervalle(h(LUNDI, 15), h(LUNDI, 16)), prefs) == NEUTRE

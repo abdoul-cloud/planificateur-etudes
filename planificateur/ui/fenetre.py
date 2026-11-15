@@ -22,7 +22,8 @@ from .accueil import PageAccueil
 from .bilan import PageBilan
 from .donnees import PageDonnees
 from .calendrier import PagePlanning, generer  # noqa: F401  (generer réexporté)
-from .pages import PageEmploiDuTemps, PageEpreuves, PageMatieres, PageTravaux
+from .emploi_grille import PageEmploi
+from .pages import PageEpreuves, PageMatieres, PageTravaux
 from .preferences import PagePreferences
 from .theme import icone
 
@@ -55,7 +56,7 @@ class FenetrePrincipale(QMainWindow):
             "Accueil": PageAccueil(base),
             "Planning": PagePlanning(base),
             "Bilan": PageBilan(base),
-            "Emploi du temps": PageEmploiDuTemps(base),
+            "Emploi du temps": PageEmploi(base),
             "Matières": PageMatieres(base),
             "Épreuves": PageEpreuves(base),
             "Travaux à rendre": PageTravaux(base),

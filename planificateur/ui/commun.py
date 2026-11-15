@@ -149,6 +149,13 @@ def tableau(colonnes: list[str]) -> QTableWidget:
     return table
 
 
+def ajuster_hauteur(table: QTableWidget, maximum_lignes: int = 4) -> None:
+    """Hauteur du tableau = en-tête + lignes (au moins une), sans ligne coupée."""
+    lignes = max(1, min(table.rowCount(), maximum_lignes))
+    hauteur_ligne = table.verticalHeader().defaultSectionSize()
+    table.setFixedHeight(table.horizontalHeader().sizeHint().height() + lignes * hauteur_ligne + 6)
+
+
 # --- Éditeurs de plages ----------------------------------------------------
 
 
@@ -158,8 +165,7 @@ class EditeurPlages(QWidget):
     def __init__(self, plages: list[m.Plage] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.table = tableau(["Nom", "Début", "Fin"])
-        self.table.verticalHeader().setDefaultSectionSize(42)
-        self.table.setMaximumHeight(190)
+        self.table.verticalHeader().setDefaultSectionSize(44)
         ajouter = QPushButton("+ Ajouter")
         retirer = QPushButton("− Retirer")
         ajouter.clicked.connect(lambda: self._ajouter_ligne(m.Plage(time(12), time(13), "Pause")))
@@ -182,6 +188,7 @@ class EditeurPlages(QWidget):
         self.table.setCellWidget(ligne, 0, QLineEdit(plage.nom))
         self.table.setCellWidget(ligne, 1, champ_heure(plage.debut))
         self.table.setCellWidget(ligne, 2, champ_heure(plage.fin))
+        ajuster_hauteur(self.table)
 
     def _retirer_ligne(self) -> None:
         ligne = self.table.currentRow()
@@ -189,11 +196,13 @@ class EditeurPlages(QWidget):
             ligne = self.table.rowCount() - 1
         if ligne >= 0:
             self.table.removeRow(ligne)
+        ajuster_hauteur(self.table)
 
     def definir(self, plages: list[m.Plage]) -> None:
         self.table.setRowCount(0)
         for plage in plages:
             self._ajouter_ligne(plage)
+        ajuster_hauteur(self.table)
 
     def valeurs(self) -> list[m.Plage]:
         plages = []
@@ -230,9 +239,9 @@ class EditeurPlagesHebdo(QWidget):
     def __init__(self, plages: list[m.PlageHebdo] | None = None, parent=None) -> None:
         super().__init__(parent)
         self.table = tableau(["Jours", "Début", "Fin"])
-        self.table.verticalHeader().setDefaultSectionSize(42)
-        self.table.setMaximumHeight(190)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(0, _ChoixJours([]).sizeHint().width() + 80)
         ajouter = QPushButton("+ Ajouter")
         retirer = QPushButton("− Retirer")
         ajouter.clicked.connect(
@@ -255,7 +264,7 @@ class EditeurPlagesHebdo(QWidget):
         self.table.setCellWidget(ligne, 0, _ChoixJours(plage.jours))
         self.table.setCellWidget(ligne, 1, champ_heure(plage.debut))
         self.table.setCellWidget(ligne, 2, champ_heure(plage.fin))
-        self.table.resizeRowsToContents()
+        ajuster_hauteur(self.table)
 
     def _retirer_ligne(self) -> None:
         ligne = self.table.currentRow()
@@ -263,11 +272,13 @@ class EditeurPlagesHebdo(QWidget):
             ligne = self.table.rowCount() - 1
         if ligne >= 0:
             self.table.removeRow(ligne)
+        ajuster_hauteur(self.table)
 
     def definir(self, plages: list[m.PlageHebdo]) -> None:
         self.table.setRowCount(0)
         for plage in plages:
             self._ajouter_ligne(plage)
+        ajuster_hauteur(self.table)
 
     def valeurs(self) -> list[m.PlageHebdo]:
         plages = []

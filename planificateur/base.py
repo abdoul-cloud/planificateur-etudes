@@ -146,7 +146,7 @@ def _preferences_depuis(donnees: dict) -> m.Preferences:
         d["pauses_quotidiennes"] = [plage(p) for p in d["pauses_quotidiennes"]]
     if "reglages_jour" in d:
         d["reglages_jour"] = {int(j): reglage(r) for j, r in d["reglages_jour"].items()}
-    for cle in ("plages_preferees", "plages_evitees"):
+    for cle in ("plages_preferees", "plages_evitees", "plages_garanties"):
         if cle in d:
             d[cle] = [hebdo(p) for p in d[cle]]
     return m.Preferences(**d)

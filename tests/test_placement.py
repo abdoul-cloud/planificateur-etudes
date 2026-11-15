@@ -17,6 +17,13 @@ from planificateur.moteur.placement import (
 )
 
 DIMANCHE_AVANT = date(2026, 11, 15)
+
+
+def sans_garantie(**options) -> m.Preferences:
+    """Préférences de test sans plages garanties (testées à part dans test_garanties.py)."""
+    options.setdefault("plages_garanties", [])
+    return m.Preferences(**options)
+
 LUNDI, MARDI, MERCREDI, JEUDI, VENDREDI, SAMEDI, DIMANCHE = (
     date(2026, 11, 16) + timedelta(days=n) for n in range(7)
 )
@@ -28,7 +35,7 @@ MATIERES = [MATHS, PHYSIQUE, ANGLAIS]
 
 # Préférences par défaut (7 h – 23 h, repas 12 h et 18 h, 6 h/jour) sans révisions
 # régulières, pour observer seules les échéances.
-SANS_REVISION = m.Preferences(minutes_revision_semaine=0)
+SANS_REVISION = sans_garantie(minutes_revision_semaine=0)
 
 
 def h(jour: date, heure: int, minute: int = 0) -> datetime:
@@ -180,7 +187,7 @@ def test_devoir_et_composition_la_meme_semaine():
 
 
 def test_semaine_irrealisable_signalee_sans_surcharger():
-    prefs = m.Preferences(max_minutes_jour=60, minutes_revision_semaine=0)
+    prefs = sans_garantie(max_minutes_jour=60, minutes_revision_semaine=0)
     epreuve = m.Epreuve(MATHS.id, h(MARDI, 14), h(MARDI, 16), minutes_preparation=480, id=1)
     res = planifier(LUNDI, DIMANCHE, prefs, MATIERES, SEMAINE, epreuves=[epreuve])
     place = sum(s.minutes for s in res.seances)
@@ -229,7 +236,7 @@ def test_seances_terminees_et_manuelles_conservees():
 
 
 def test_plages_preferees_choisies_d_abord():
-    prefs = m.Preferences(
+    prefs = sans_garantie(
         minutes_revision_semaine=0,
         plages_preferees=[m.PlageHebdo([0, 1, 2, 3, 4], time(19), time(22))],
     )
@@ -240,14 +247,14 @@ def test_plages_preferees_choisies_d_abord():
 
 
 def test_plages_evitees_en_dernier_recours():
-    evite_la_journee = m.Preferences(
+    evite_la_journee = sans_garantie(
         minutes_revision_semaine=0, plages_evitees=[m.PlageHebdo(list(range(7)), time(7), time(19))]
     )
     travail = rapport(minutes_estimees=90, echeance=h(MERCREDI, 23))  # à finir avant mercredi 11 h
     [seance] = planifier(LUNDI, DIMANCHE, evite_la_journee, MATIERES, SEMAINE, travaux=[travail]).seances
     assert seance.debut == h(MARDI, 19)  # le soir plutôt que mardi midi
 
-    tout_evite = m.Preferences(
+    tout_evite = sans_garantie(
         minutes_revision_semaine=0, plages_evitees=[m.PlageHebdo(list(range(7)), time(7), time(23))]
     )
     res = planifier(LUNDI, DIMANCHE, tout_evite, MATIERES, SEMAINE, travaux=[travail])
@@ -256,7 +263,7 @@ def test_plages_evitees_en_dernier_recours():
 
 
 def test_horaires_flexibles_respectes():
-    prefs = m.Preferences(
+    prefs = sans_garantie(
         minutes_revision_semaine=0,
         reglages_jour={
             2: m.ReglageJour(pauses=[m.Plage(time(12), time(13)), m.Plage(time(14), time(23), "Repos")]),
@@ -280,7 +287,7 @@ def test_repartition_des_revisions_selon_le_poids():
 
 
 def test_semaine_sans_epreuve_revisions_dans_le_budget():
-    prefs = m.Preferences()  # 300 min par semaine → 6 séances de 45 min
+    prefs = sans_garantie()  # 300 min par semaine → 6 séances de 45 min
     res = planifier(LUNDI, DIMANCHE, prefs, MATIERES, SEMAINE)
     revisions = seances_de(res, type=m.TypeSeance.REVISION)
     assert sum(s.minutes for s in revisions) == 270
@@ -294,13 +301,13 @@ def test_semaine_sans_epreuve_revisions_dans_le_budget():
 
 
 def test_revision_placee_un_a_deux_jours_apres_le_cours():
-    prefs = m.Preferences(minutes_revision_semaine=90)  # 2 séances
+    prefs = sans_garantie(minutes_revision_semaine=90)  # 2 séances
     res = planifier(LUNDI, DIMANCHE, prefs, [MATHS], [cours(MATHS, 0, 7, 12)])
     assert {s.debut.date() for s in res.seances} == {MARDI, MERCREDI}
 
 
 def test_revisions_ne_prennent_pas_la_place_des_echeances():
-    prefs = m.Preferences(minutes_revision_semaine=3000, max_minutes_jour=180)
+    prefs = sans_garantie(minutes_revision_semaine=3000, max_minutes_jour=180)
     epreuve = compo_maths()
     res = planifier(LUNDI, DIMANCHE, prefs, MATIERES, SEMAINE, epreuves=[epreuve])
     assert sum(s.minutes for s in seances_de(res, epreuve_id=1)) == 210
@@ -310,14 +317,14 @@ def test_revisions_ne_prennent_pas_la_place_des_echeances():
 
 
 def test_aucune_revision_dans_le_passe():
-    prefs = m.Preferences()
+    prefs = sans_garantie()
     maintenant = h(JEUDI, 15)
     res = planifier(LUNDI, DIMANCHE, prefs, MATIERES, SEMAINE, maintenant=maintenant)
     assert res.seances and all(s.debut >= maintenant for s in res.seances)
 
 
 def test_resultat_identique_a_chaque_appel():
-    arguments = (LUNDI, DIMANCHE, m.Preferences(), MATIERES, SEMAINE)
+    arguments = (LUNDI, DIMANCHE, sans_garantie(), MATIERES, SEMAINE)
     options = dict(epreuves=[compo_maths()], travaux=[rapport()])
     assert planifier(*arguments, **options).seances == planifier(*arguments, **options).seances
 
@@ -326,7 +333,7 @@ def test_resultat_identique_a_chaque_appel():
 
 
 def test_repos_avant_chaque_epreuve_et_jour_d_epreuve_allege():
-    prefs = m.Preferences()  # 3 h de repos avant, 2 h maximum le jour même
+    prefs = sans_garantie()  # 3 h de repos avant, 2 h maximum le jour même
     jeudi, samedi = compo_maths(), m.Epreuve(PHYSIQUE.id, h(SAMEDI, 9), h(SAMEDI, 11), id=2)
     res = planifier(LUNDI, DIMANCHE, prefs, MATIERES, SEMAINE, epreuves=[jeudi, samedi], travaux=[rapport()])
     for e in (jeudi, samedi):
@@ -338,7 +345,7 @@ def test_repos_avant_chaque_epreuve_et_jour_d_epreuve_allege():
 
 
 def test_reglages_du_repos_avant_epreuve():
-    sans_repos = m.Preferences(minutes_revision_semaine=0, repos_avant_epreuve_min=0, max_minutes_jour_epreuve=360)
+    sans_repos = sans_garantie(minutes_revision_semaine=0, repos_avant_epreuve_min=0, max_minutes_jour_epreuve=360)
     epreuve = m.Epreuve(MATHS.id, h(MARDI, 14), h(MARDI, 16), minutes_preparation=120, id=1)
     res = planifier(LUNDI, DIMANCHE, sans_repos, MATIERES, SEMAINE, epreuves=[epreuve])
     assert any(s.debut == h(MARDI, 13) for s in res.seances)  # mardi midi redevient possible
@@ -351,3 +358,14 @@ def test_charge_repartie_sur_la_semaine():
     assert {LUNDI, MARDI, MERCREDI, JEUDI} <= {s.debut.date() for s in res.seances}
     assert max(res.charge_par_jour().values()) <= 150
     verifier_contraintes(res, SANS_REVISION)
+
+
+def test_plage_preferee_au_milieu_d_un_creneau_libre():
+    # Vendredi, libre de 19 h à 23 h : la séance doit commencer à 20 h, début de la plage préférée.
+    preferences = sans_garantie(
+        minutes_revision_semaine=0, plages_preferees=[m.PlageHebdo([4], time(20), time(22))]
+    )
+    travail = rapport(minutes_estimees=90, echeance=h(SAMEDI, 12))
+    [seance] = planifier(LUNDI, DIMANCHE, preferences, MATIERES, SEMAINE, travaux=[travail]).seances
+    assert seance.debut == h(VENDREDI, 20)
+    assert niveau_preference(Intervalle(seance.debut, seance.fin), preferences) == PREFEREE

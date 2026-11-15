@@ -11,7 +11,7 @@ from planificateur.suivi import a_pointer, bilan, marquer, mettre_a_jour_etats, 
 from planificateur.ui.calendrier import enregistrer_resultat, generer
 
 LUNDI = date(2026, 11, 16)
-SANS_REVISION = m.Preferences(minutes_revision_semaine=0)
+SANS_REVISION = m.Preferences(minutes_revision_semaine=0, plages_garanties=[])
 
 
 @pytest.fixture
