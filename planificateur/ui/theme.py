@@ -56,7 +56,7 @@ ICONES = {
     "sauvegarde": "\ue74e",
     "dossier": "\ue838",
     "restaurer": "\ue777",
-    "importer": "\ue8b5",
+    "importer": "\ue723",
     "assistant": "\ue8f2",
     "envoyer": "\ue724",
 }

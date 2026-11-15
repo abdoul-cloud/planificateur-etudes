@@ -16,6 +16,8 @@ from planificateur.ia.assistant import OUTILS, appliquer, contexte, preparer, re
 from planificateur.ia.gemini import Appel, ClientGemini, ErreurGemini, _message_http, bloc_fichier, json_de, lire_reponse
 from planificateur.ia.import_edt import associer_matiere, extraire, interpreter, lire_heure
 
+QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+
 CLE = "AIzaSy-cle-de-test-pas-reelle-0123456789"
 windows = pytest.mark.skipif(sys.platform != "win32", reason="chiffrement DPAPI propre à Windows")
 
@@ -512,3 +514,96 @@ def test_gemini_est_informe_des_propositions_et_resultats(application, remplie, 
     page.montrer_envoi()
     assert "Réponse reçue de Gemini" in page.dialogue_envoi.findChild(type(page.saisie)).toPlainText()
     page.dialogue_envoi.close()
+
+
+# --- Emploi du temps joint dans l'Assistant ---------------------------------------------
+
+
+def _reponse_emploi():
+    return texte(json.dumps({"cours": [
+        {"nom": "Trait. signal", "matiere": "Traitement de signal", "type": "tp", "chaque_semaine": True,
+         "jour": "mercredi", "debut": "07:00", "fin": "12:00"},
+        {"nom": "Réseaux", "matiere": "Réseaux Informatiques", "type": "cours", "chaque_semaine": True,
+         "jour": "jeudi", "debut": "14:00", "fin": "18:00"},
+    ]}))
+
+
+def _page_assistant(base, faux):
+    from planificateur.ui.assistant_page import PageAssistant
+
+    page = PageAssistant(base)
+    page.client = ClientGemini(CLE, "m", faux)
+    page.avertir = lambda *args: None
+    page.rafraichir()
+    return page
+
+
+def test_emploi_du_temps_joint_lu_verifie_et_ajoute(application, remplie, synchrone, tmp_path):
+    pdf = tmp_path / "emploi.pdf"
+    pdf.write_bytes(b"%PDF-1.4 emploi du temps")
+    faux = FauxGemini(_reponse_emploi())
+    page = _page_assistant(remplie, faux)
+    vus = []
+
+    def verifier(dialogue):
+        vus.append(len(dialogue.lignes))
+        dialogue.resultat = dialogue.valeurs()
+        return True
+
+    page.ouvrir_dialogue = verifier
+    modifie = []
+    page.donnees_modifiees.connect(lambda: modifie.append(True))
+    assert page.joindre(pdf) and page.piece_jointe.isVisibleTo(page)
+    page.envoyer("seulement le semestre 2")
+    assert vus == [2]
+    assert sorted(a.jour_semaine for a in remplie.activites.lister()) == [2, 3]
+    assert modifie and page.document is None and not page.piece_jointe.isVisibleTo(page)
+    corps = faux.envois[0][1]
+    assert corps["input"][0]["type"] == "document"
+    assert "semestre 2" in corps["input"][1]["text"]  # la remarque accompagne la lecture
+    assert page.cartes[-1].action.nom == "regenerer_planning"  # propose de recalculer
+    assert page.cartes[-1].appliquer() and remplie.seances.lister()
+
+
+def test_emploi_du_temps_joint_annule(application, remplie, synchrone, tmp_path):
+    image = tmp_path / "emploi.png"
+    image.write_bytes(b"\x89PNG" + b"0" * 500)
+    page = _page_assistant(remplie, FauxGemini(_reponse_emploi()))
+    page.ouvrir_dialogue = lambda dialogue: False
+    page.joindre(image)
+    page.envoyer("")  # un document seul suffit, sans texte
+    assert remplie.activites.lister() == [] and not page.cartes
+
+
+def test_emploi_du_temps_joint_chevauchement_signale(application, remplie, synchrone, tmp_path):
+    remplie.activites.ajouter(m.ActiviteFixe("Sport", time(8), time(9), jour_semaine=2))
+    image = tmp_path / "emploi.jpg"
+    image.write_bytes(b"\xff\xd8" + b"0" * 500)
+    page = _page_assistant(remplie, FauxGemini(_reponse_emploi()))
+    page.ouvrir_dialogue = lambda dialogue: setattr(dialogue, "resultat", dialogue.valeurs()) or True
+    page.joindre(image)
+    page.envoyer("")
+    noms = sorted(a.nom for a in remplie.activites.lister())
+    assert noms == ["Réseaux", "Sport"]  # le TP du mercredi chevauchait le sport
+    textes = [w.text() for w in page.fil.findChildren(QtWidgets.QLabel)]
+    assert any("déjà occupé" in t and "Sport" in t for t in textes)
+
+
+def test_format_joint_refuse(application, remplie, tmp_path):
+    fichier = tmp_path / "emploi.docx"
+    fichier.write_bytes(b"x")
+    page = _page_assistant(remplie, FauxGemini())
+    messages = []
+    page.avertir = lambda parent, titre, texte_message: messages.append(texte_message)
+    assert not page.joindre(fichier) and page.document is None and "PDF" in messages[0]
+
+
+def test_lecture_impossible_expliquee(application, remplie, synchrone, tmp_path):
+    pdf = tmp_path / "flou.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    page = _page_assistant(remplie, FauxGemini(texte('{"cours": []}')))
+    page.joindre(pdf)
+    page.envoyer("")
+    textes = [w.text() for w in page.fil.findChildren(QtWidgets.QLabel)]
+    assert any("Aucun cours n'a été reconnu" in t for t in textes)
+    assert page.bouton_envoyer.isEnabled()

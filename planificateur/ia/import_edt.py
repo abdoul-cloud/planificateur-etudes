@@ -63,7 +63,7 @@ class Proposition:
         )
 
 
-def consigne(matieres: list[m.Matiere], reference: date) -> str:
+def consigne(matieres: list[m.Matiere], reference: date, remarque: str = "") -> str:
     noms = ", ".join(f"« {x.nom} »" for x in matieres if not x.terminee) or "(aucune encore)"
     return (
         "Voici l'emploi du temps d'un étudiant (image ou PDF). Liste chaque cours, TD, TP ou activité "
@@ -76,13 +76,15 @@ def consigne(matieres: list[m.Matiere], reference: date) -> str:
         f"« date » (AAAA-MM-JJ ; nous sommes le {reference.isoformat()}, déduis l'année si besoin).\n"
         "- Heures au format HH:MM sur 24 h. N'invente rien : ignore ce qui est illisible.\n"
         "- Les pauses, repas et cases vides ne sont pas des cours."
+        + (f"\n- Remarque de l'étudiant à respecter : {remarque.strip()}" if remarque.strip() else "")
     )
 
 
 def extraire(client: ClientGemini, fichier: Path, matieres: list[m.Matiere],
-             reference: date | None = None) -> list[Proposition]:
+             reference: date | None = None, remarque: str = "") -> list[Proposition]:
     reference = reference or date.today()
-    reponse = client.interagir([bloc_fichier(fichier), bloc_texte(consigne(matieres, reference))], schema=SCHEMA)
+    reponse = client.interagir([bloc_fichier(fichier), bloc_texte(consigne(matieres, reference, remarque))],
+                               schema=SCHEMA)
     donnees = json_de(reponse.texte) if reponse.texte else {}
     propositions = interpreter(donnees, matieres)
     if not propositions:
