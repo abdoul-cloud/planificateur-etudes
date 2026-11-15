@@ -392,3 +392,70 @@ def test_erreur_de_cle_renvoyee_par_google(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", refuser)
     with pytest.raises(ErreurGemini, match="Clé API invalide"):
         gemini.ClientGemini(CLE, "m").tester()
+
+
+# --- Surcharge passagère (503) ------------------------------------------------------
+
+
+def surcharge():
+    return ErreurGemini("Gemini est très sollicité en ce moment.", 503)
+
+
+def test_nouvel_essai_apres_une_surcharge():
+    attentes = []
+    faux = FauxGemini(surcharge(), texte("OK"))
+    client = ClientGemini(CLE, "gemini-flash-latest", faux, attendre=attentes.append)
+    assert client.tester() == "OK"
+    assert attentes == [2] and client.modele_utilise == "gemini-flash-latest"
+
+
+def test_bascule_vers_un_modele_de_secours():
+    faux = FauxGemini(surcharge(), surcharge(), surcharge(), texte("OK"))
+    client = ClientGemini(CLE, "gemini-flash-latest", faux, secours=["gemini-3.6-flash"], attendre=lambda s: None)
+    assert client.tester() == "OK"
+    modeles = [corps["model"] for _, corps, _ in faux.envois]
+    assert modeles == ["gemini-flash-latest"] * 3 + ["gemini-3.6-flash"]
+    assert client.modele_utilise == "gemini-3.6-flash"
+
+
+def test_modele_de_secours_inexistant_saute():
+    faux = FauxGemini(surcharge(), surcharge(), surcharge(), ErreurGemini("Modèle introuvable", 404), texte("OK"))
+    client = ClientGemini(CLE, "gemini-flash-latest", faux, secours=["modele-disparu", "gemini-3.5-flash-lite"],
+                          attendre=lambda s: None)
+    assert client.tester() == "OK" and client.modele_utilise == "gemini-3.5-flash-lite"
+
+
+def test_surcharge_persistante_expliquee():
+    faux = FauxGemini(*[surcharge() for _ in range(10)])
+    client = ClientGemini(CLE, "gemini-flash-latest", faux, secours=["gemini-3.6-flash"], attendre=lambda s: None)
+    with pytest.raises(ErreurGemini, match="sollicité"):
+        client.tester()
+    assert len(faux.envois) == 4  # 3 essais sur le modèle choisi + 1 sur le secours, pas plus
+
+
+def test_cle_refusee_jamais_reessayee():
+    faux = FauxGemini(ErreurGemini("Clé API invalide", 400), texte("OK"))
+    client = ClientGemini(CLE, "gemini-flash-latest", faux, attendre=lambda s: pytest.fail("pas d'attente"))
+    with pytest.raises(ErreurGemini, match="invalide"):
+        client.tester()
+    assert len(faux.envois) == 1
+
+
+def test_message_de_surcharge_en_francais():
+    assert "très sollicité" in _message_http(503, "high demand")
+
+
+@windows
+def test_preferences_indiquent_le_modele_de_secours(application, base, synchrone):
+    from planificateur.ui.preferences import SectionAssistant
+
+    section = SectionAssistant(base)
+    section.champ_cle.setText(CLE)
+    section.enregistrer_cle()
+    faux = FauxGemini(surcharge(), surcharge(), surcharge(), texte("OK"))
+    section.client_test = ClientGemini(CLE, "gemini-flash-latest", faux, secours=["gemini-3.6-flash"],
+                                       attendre=lambda s: None)
+    section.tester()
+    assert "gemini-3.6-flash" in section.resultat.text() and "surchargé" in section.resultat.text()
+    section.choix_modele.setCurrentText("gemini-3.8-flash")
+    assert cle_ia.modele(base) == "gemini-3.8-flash"  # le choix est enregistré aussitôt

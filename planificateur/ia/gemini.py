@@ -30,7 +30,19 @@ TYPES_FICHIERS = {
 
 
 class ErreurGemini(Exception):
-    """Erreur expliquée en français, prête à afficher."""
+    """Erreur expliquée en français, prête à afficher (avec le code HTTP s'il y en a un)."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+# Surcharge passagère côté Google : on réessaie, puis on passe à un autre modèle.
+CODES_PASSAGERS = {500, 502, 503, 504}
+ATTENTES_S = (2, 5)  # délais avant les nouveaux essais sur le même modèle
+MODELES_SECOURS = ["gemini-flash-lite-latest", "gemini-3.6-flash", "gemini-3.5-flash-lite"]
+MODELES_PROPOSES = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-3.8-flash",
+                    "gemini-3.6-flash", "gemini-3.5-flash-lite"]
 
 
 @dataclass
@@ -89,8 +101,8 @@ def _transport_http(url: str, corps: bytes, entetes: dict[str, str]) -> dict:
         except Exception:  # noqa: BLE001 — le détail est facultatif
             pass
         if raison == "API_KEY_INVALID" or "API key not valid" in detail:
-            raise ErreurGemini("Clé API invalide : vérifiez-la dans les Préférences (Assistant IA).") from erreur
-        raise ErreurGemini(_message_http(erreur.code, detail)) from erreur
+            raise ErreurGemini("Clé API invalide : vérifiez-la dans les Préférences (Assistant IA).", erreur.code) from erreur
+        raise ErreurGemini(_message_http(erreur.code, detail), erreur.code) from erreur
     except urllib.error.URLError as erreur:
         raise ErreurGemini("Impossible de joindre Gemini : vérifiez votre connexion Internet.") from erreur
     except TimeoutError as erreur:
@@ -104,6 +116,7 @@ def _message_http(code: int, detail: str) -> str:
         403: "Clé API refusée ou sans accès à ce modèle : vérifiez-la dans les Préférences.",
         404: "Modèle introuvable : vérifiez son nom dans les Préférences.",
         429: "Limite de la formule gratuite atteinte. Réessayez dans quelques minutes.",
+        503: "Gemini est très sollicité en ce moment (surcharge passagère chez Google). Réessayez dans un instant.",
     }
     texte = messages.get(code, f"Gemini a renvoyé une erreur ({code}). Réessayez plus tard.")
     return f"{texte}\n\nDétail : {detail}" if detail else texte
@@ -123,15 +136,42 @@ def _apercu(valeur):
 
 class ClientGemini:
     def __init__(self, cle: str, modele: str,
-                 transport: Callable[[str, bytes, dict[str, str]], dict] | None = None) -> None:
+                 transport: Callable[[str, bytes, dict[str, str]], dict] | None = None,
+                 secours: list[str] | None = None, attentes: tuple[float, ...] = ATTENTES_S,
+                 attendre: Callable[[float], None] | None = None) -> None:
         self.cle = cle
         self.modele = modele
         self.transport = transport or _transport_http
+        self.secours = [x for x in (MODELES_SECOURS if secours is None else secours) if x != modele]
+        self.attentes = attentes
+        self.attendre = attendre or __import__("time").sleep
         self.dernier_envoi: dict | None = None  # pour « Voir ce qui est envoyé »
+        self.modele_utilise: str = modele  # modèle qui a réellement répondu
 
     def interagir(self, entree, instruction: str | None = None, outils: list[dict] | None = None,
                   schema: dict | None = None) -> Reponse:
-        corps: dict = {"model": self.modele, "input": entree, "store": False}
+        """Envoie la requête ; en cas de surcharge, réessaie puis passe aux modèles de secours."""
+        derniere: ErreurGemini | None = None
+        for modele in [self.modele, *self.secours]:
+            essais = (0, *self.attentes) if modele == self.modele else (0,)
+            for attente in essais:
+                if attente:
+                    self.attendre(attente)
+                try:
+                    reponse = self._envoyer(modele, entree, instruction, outils, schema)
+                except ErreurGemini as erreur:
+                    if erreur.code in CODES_PASSAGERS:
+                        derniere = erreur
+                        continue  # surcharge : nouvel essai, puis modèle suivant
+                    if erreur.code == 404 and modele != self.modele:
+                        break  # ce modèle de secours n'existe pas (ou plus) : on passe au suivant
+                    raise
+                self.modele_utilise = modele
+                return reponse
+        raise derniere or ErreurGemini("Gemini ne répond pas pour le moment. Réessayez plus tard.")
+
+    def _envoyer(self, modele: str, entree, instruction, outils, schema) -> Reponse:
+        corps: dict = {"model": modele, "input": entree, "store": False}
         if instruction:
             corps["system_instruction"] = instruction
         if outils:

@@ -6,6 +6,7 @@ from datetime import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QLineEdit,
     QCheckBox,
     QDialog,
@@ -400,9 +401,15 @@ class SectionAssistant(QGroupBox):
         enregistrer.clicked.connect(self.enregistrer_cle)
         effacer = bouton_role(QPushButton("Effacer la clé"), "danger")
         effacer.clicked.connect(self.effacer_cle)
-        self.champ_modele = QLineEdit()
-        self.champ_modele.setPlaceholderText(cle_ia.MODELE_PAR_DEFAUT)
+        from ..ia.gemini import MODELES_PROPOSES
+
+        self.choix_modele = QComboBox()
+        self.choix_modele.setEditable(True)
+        self.choix_modele.addItems(MODELES_PROPOSES)
+        self.choix_modele.setToolTip("Choisissez un modèle proposé, ou tapez un autre nom de modèle Gemini")
+        self.champ_modele = self.choix_modele.lineEdit()
         self.champ_modele.editingFinished.connect(lambda: cle_ia.definir_modele(self.base, self.champ_modele.text()))
+        self.choix_modele.currentTextChanged.connect(lambda texte: cle_ia.definir_modele(self.base, texte))
         self.tester_bouton = QPushButton("Tester la connexion")
         self.tester_bouton.clicked.connect(self.tester)
         self.actif = QCheckBox("Activer l'assistant et l'import par IA")
@@ -415,14 +422,14 @@ class SectionAssistant(QGroupBox):
         f = QFormLayout()
         colonne_ia.addLayout(f)
         self.champ_cle.setMinimumWidth(160)
-        self.champ_modele.setMinimumWidth(160)
+        self.choix_modele.setMinimumWidth(160)
         f.addRow("État", _avec_texte(self.etat, ""))
         ligne_cle = QHBoxLayout()
         for w in (self.champ_cle, enregistrer, effacer):
             ligne_cle.addWidget(w)
         f.addRow("Clé API", ligne_cle)
         ligne_modele = QHBoxLayout()
-        ligne_modele.addWidget(self.champ_modele, 1)
+        ligne_modele.addWidget(self.choix_modele, 1)
         ligne_modele.addWidget(self.tester_bouton)
         f.addRow("Modèle", ligne_modele)
         f.addRow("", self.actif)
@@ -432,7 +439,9 @@ class SectionAssistant(QGroupBox):
     def rafraichir(self) -> None:
         presente = cle_ia.lire_cle(self.base) is not None
         self.etat.setText("Clé enregistrée (chiffrée)" if presente else "Aucune clé : assistant désactivé")
-        self.champ_modele.setText(cle_ia.modele(self.base))
+        self.choix_modele.blockSignals(True)
+        self.choix_modele.setEditText(cle_ia.modele(self.base))
+        self.choix_modele.blockSignals(False)
         self.actif.blockSignals(True)
         self.actif.setChecked(cle_ia.est_actif(self.base))
         self.actif.setEnabled(presente)
@@ -477,7 +486,11 @@ class SectionAssistant(QGroupBox):
 
         def reussi(texte):
             self.tester_bouton.setEnabled(True)
-            self.resultat.setText(f"✓ Connexion réussie avec « {client.modele} ».")
+            if client.modele_utilise != client.modele:
+                self.resultat.setText(f"✓ Connexion réussie. « {client.modele} » était surchargé : "
+                                      f"« {client.modele_utilise} » a répondu à sa place (cela se fera automatiquement).")
+            else:
+                self.resultat.setText(f"✓ Connexion réussie avec « {client.modele} ».")
 
         def echoue(message):
             self.tester_bouton.setEnabled(True)
