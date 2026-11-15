@@ -35,7 +35,7 @@ La clé est chiffrée pour le compte Windows (DPAPI). Seuls le message, les donn
 
 ## Installateur Windows
 
-Le fichier `build\installateur\Installer-PlanificateurEtudes-0.3.1.exe` installe l'application sans droits administrateur : raccourci dans le menu Démarrer (et sur le Bureau si on le coche), désinstallation depuis Paramètres > Applications. Il n'a besoin ni de Python ni d'Internet. Les données de `%APPDATA%\PlanificateurEtudes` ne sont jamais supprimées, ni par une mise à jour ni par une désinstallation.
+Le fichier `build\installateur\Installer-PlanificateurEtudes-0.4.0.exe` installe l'application sans droits administrateur : raccourci dans le menu Démarrer (et sur le Bureau si on le coche), désinstallation depuis Paramètres > Applications. Il n'a besoin ni de Python ni d'Internet. Les données de `%APPDATA%\PlanificateurEtudes` ne sont jamais supprimées, ni par une mise à jour ni par une désinstallation.
 
 Pour le reconstruire (tests, application autonome, auto-test de l'exécutable, puis installateur) :
 
