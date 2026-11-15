@@ -56,6 +56,9 @@ ICONES = {
     "sauvegarde": "\ue74e",
     "dossier": "\ue838",
     "restaurer": "\ue777",
+    "importer": "\ue8b5",
+    "assistant": "\ue8f2",
+    "envoyer": "\ue724",
 }
 
 
@@ -192,6 +195,12 @@ QLabel#vide {{ color: {TEXTE_DOUX}; font-size: 11pt; padding: 40px; }}
 QFrame#carte {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 12px; }}
 QFrame#alerte {{ background: {DANGER_PALE}; border: 1px solid #F5C2CD; border-radius: 10px; }}
 QFrame#alerte QLabel {{ color: #8A1C33; background: transparent; }}
+QFrame#bulleMoi {{ background: {ACCENT}; border-radius: 14px; }}
+QFrame#bulleMoi QLabel {{ color: white; background: transparent; }}
+QFrame#bulleIA {{ background: {SURFACE}; border: 1px solid {BORDURE}; border-radius: 14px; }}
+QFrame#bulleIA QLabel {{ background: transparent; }}
+QFrame#carteAction {{ background: {ACCENT_PALE}; border: 1px solid #CDD2F7; border-radius: 12px; }}
+QFrame#carteAction QLabel {{ background: transparent; color: {TEXTE}; font-weight: 600; }}
 QFrame#bandeau {{ background: {ACCENT_PALE}; border: 1px solid #CDD2F7; border-radius: 10px; }}
 QFrame#bandeau QLabel {{ color: {ACCENT_FONCE}; background: transparent; font-weight: 600; }}
 QLabel#pastille {{

@@ -19,6 +19,7 @@ from ..base import Base
 from ..suivi import mettre_a_jour_etats
 from . import theme
 from .accueil import PageAccueil
+from .assistant_page import PageAssistant
 from .bilan import PageBilan
 from .donnees import PageDonnees
 from .calendrier import PagePlanning, generer  # noqa: F401  (generer réexporté)
@@ -32,6 +33,7 @@ ECRANS = [
     ("Accueil", "accueil", "ORGANISER"),
     ("Planning", "planning", "ORGANISER"),
     ("Bilan", "bilan", "ORGANISER"),
+    ("Assistant", "assistant", "ORGANISER"),
     ("Emploi du temps", "emploi", "MES DONNÉES"),
     ("Matières", "matieres", "MES DONNÉES"),
     ("Épreuves", "epreuves", "MES DONNÉES"),
@@ -56,6 +58,7 @@ class FenetrePrincipale(QMainWindow):
             "Accueil": PageAccueil(base),
             "Planning": PagePlanning(base),
             "Bilan": PageBilan(base),
+            "Assistant": PageAssistant(base),
             "Emploi du temps": PageEmploi(base),
             "Matières": PageMatieres(base),
             "Épreuves": PageEpreuves(base),
@@ -142,6 +145,9 @@ class FenetrePrincipale(QMainWindow):
         self.pages["Préférences"].preferences_enregistrees.connect(planning.signaler_changement)
         self.pages["Accueil"].replanifier.connect(self._replanifier_depuis_accueil)
         self.pages["Sauvegarde"].donnees_restaurees.connect(self._apres_restauration)
+        self.pages["Assistant"].aller_a.connect(self.afficher)
+        self.pages["Assistant"].donnees_modifiees.connect(planning.signaler_changement)
+        self.pages["Préférences"].section_ia.reglages_changes.connect(self.pages["Assistant"].rafraichir)
         self.afficher("Accueil")
 
     def _replanifier_depuis_accueil(self) -> None:
@@ -164,6 +170,6 @@ class FenetrePrincipale(QMainWindow):
     def afficher(self, nom: str) -> None:
         self.boutons[nom].setChecked(True)
         page = self.pages[nom]
-        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan", "Sauvegarde"):
+        if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan", "Sauvegarde", "Assistant"):
             page.rafraichir()
         self.pile.setCurrentWidget(page)

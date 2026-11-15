@@ -24,6 +24,15 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .[dev]
 ```
 
+## Assistant IA (facultatif)
+
+Avec une clé Gemini gratuite (Préférences > Assistant IA), deux fonctions s'ajoutent :
+
+- **Importer un emploi du temps** depuis une image ou un PDF (écran Emploi du temps) : Gemini propose les cours, qu'on vérifie et corrige avant de les ajouter.
+- **Assistant** : questions sur le planning, résumé de la semaine, imprévus en langage naturel. Chaque changement proposé s'applique seulement sur accord.
+
+La clé est chiffrée pour le compte Windows (DPAPI). Seuls le message, les données utiles du planificateur et le fichier joint sont envoyés, uniquement à `generativelanguage.googleapis.com`, avec `store: false` ; « Voir ce qui est envoyé » montre le dernier envoi. Sans clé, l'application reste entièrement hors ligne (un test le vérifie).
+
 ## Installateur Windows
 
 Le fichier `build\installateur\Installer-PlanificateurEtudes-0.3.1.exe` installe l'application sans droits administrateur : raccourci dans le menu Démarrer (et sur le Bureau si on le coche), désinstallation depuis Paramètres > Applications. Il n'a besoin ni de Python ni d'Internet. Les données de `%APPDATA%\PlanificateurEtudes` ne sont jamais supprimées, ni par une mise à jour ni par une désinstallation.

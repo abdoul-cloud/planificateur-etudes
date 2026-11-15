@@ -331,6 +331,10 @@ class PageEmploi(QWidget):
         self.lundi = lundi_de(date.today())
         self.avertir = QMessageBox.warning
         self.confirmer = lambda titre, texte: QMessageBox.question(self, titre, texte) == QMessageBox.StandardButton.Yes
+        # Import par IA : remplaçables dans les tests
+        self.client_ia = None
+        self.choisir_fichier = self._choisir_fichier
+        self.ouvrir_dialogue = lambda dialogue: dialogue.exec()
 
         entete, actions = en_tete(
             "Emploi du temps",
@@ -364,6 +368,10 @@ class PageEmploi(QWidget):
         for w in (self.precedent, self.cette_semaine, self.suivant, self.titre_semaine, self.message):
             navigation.addWidget(w)
         navigation.addStretch()
+        self.bouton_import = QPushButton(icone("importer"), " Importer une image ou un PDF…")
+        self.bouton_import.setToolTip("Gemini lit votre emploi du temps ; vous vérifiez avant tout ajout")
+        self.bouton_import.clicked.connect(self.importer)
+        navigation.addWidget(self.bouton_import)
 
         self.grille = GrilleEmploi()
         self.grille.creation_demandee.connect(self.demander_creation)
@@ -428,6 +436,71 @@ class PageEmploi(QWidget):
         self.grille.definir(self.lundi, self.base.preferences(), occurrences(activites, self.lundi, dimanche, exceptions),
                             epreuves, [], self.base.matieres.lister())
         self.liste.rafraichir()
+
+    # --- Import par IA ------------------------------------------------------------
+
+    def _choisir_fichier(self) -> str:
+        from PySide6.QtCore import QStandardPaths
+        from PySide6.QtWidgets import QFileDialog
+
+        dossier = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        chemin, _ = QFileDialog.getOpenFileName(
+            self, "Choisir l'emploi du temps", dossier, "Emploi du temps (*.pdf *.png *.jpg *.jpeg *.webp)"
+        )
+        return chemin
+
+    def importer(self) -> None:
+        from pathlib import Path
+
+        from ..ia import cle as cle_ia
+        from ..ia.gemini import ClientGemini
+        from ..ia.import_edt import extraire
+        from .fond import en_fond
+
+        if self.client_ia is None and not cle_ia.est_actif(self.base):
+            self.avertir(self, "Assistant IA non activé",
+                         "Ajoutez votre clé Gemini dans Préférences > Assistant IA, puis réessayez.")
+            return
+        chemin = self.choisir_fichier()
+        if not chemin:
+            return
+        client = self.client_ia or ClientGemini(cle_ia.lire_cle(self.base), cle_ia.modele(self.base))
+        matieres = self.base.matieres.lister(ordre="nom")
+        self.bouton_import.setEnabled(False)
+        self.message.setText("⏳  Gemini lit votre emploi du temps…")
+        self.message.show()
+        en_fond(lambda: extraire(client, Path(chemin), matieres, date.today()), self._import_recu, self._import_echoue)
+
+    def _import_echoue(self, message: str) -> None:
+        self.bouton_import.setEnabled(True)
+        self.message.hide()
+        self.avertir(self, "Import impossible", message)
+
+    def _import_recu(self, propositions) -> None:
+        from .import_dialogue import DialogueImport
+
+        self.bouton_import.setEnabled(True)
+        self.message.hide()
+        dialogue = DialogueImport(propositions, self.base.matieres.lister(ordre="nom"), self)
+        if self.ouvrir_dialogue(dialogue):
+            self.ajouter_import(dialogue.resultat or dialogue.valeurs())
+
+    def ajouter_import(self, activites: list[m.ActiviteFixe]) -> tuple[int, list[str]]:
+        ajoutes, refus = 0, []
+        for activite in activites:
+            conflit = self._chevauchement(activite)
+            if conflit:
+                refus.append(f"{activite.nom} ({conflit})")
+                continue
+            self.base.activites.ajouter(activite)
+            ajoutes += 1
+        if refus:
+            self.avertir(self, "Quelques cours non ajoutés",
+                         "Ces cours chevauchent une activité déjà présente :\n• " + "\n• ".join(refus))
+        if ajoutes:
+            self.informer(f"{ajoutes} cours ajouté{'s' if ajoutes > 1 else ''} depuis le document")
+            self._modifie()
+        return ajoutes, refus
 
     def informer(self, texte: str) -> None:
         self.message.setText(f"✓  {texte}")

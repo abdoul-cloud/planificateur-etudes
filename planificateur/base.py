@@ -254,6 +254,24 @@ class Base:
                 f"BEGIN; {MIGRATIONS[cible]} PRAGMA user_version = {cible}; COMMIT;"
             )
 
+    # --- Paramètres divers (texte libre, ex. réglages de l'assistant) ----------
+
+    def parametre(self, cle: str, defaut: str | None = None) -> str | None:
+        ligne = self._cx.execute("SELECT valeur FROM parametres WHERE cle = ?", [cle]).fetchone()
+        return ligne[0] if ligne else defaut
+
+    def definir_parametre(self, cle: str, valeur: str) -> None:
+        with self._cx:
+            self._cx.execute(
+                "INSERT INTO parametres (cle, valeur) VALUES (?, ?) "
+                "ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
+                [cle, valeur],
+            )
+
+    def supprimer_parametre(self, cle: str) -> None:
+        with self._cx:
+            self._cx.execute("DELETE FROM parametres WHERE cle = ?", [cle])
+
     def preferences(self) -> m.Preferences:
         ligne = self._cx.execute(
             "SELECT valeur FROM parametres WHERE cle = 'preferences'"

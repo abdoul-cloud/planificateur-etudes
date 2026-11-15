@@ -185,8 +185,12 @@ def test_page_sauvegarde(application, remplie, tmp_path):
 # --- Hors ligne ----------------------------------------------------------------
 
 
-def test_aucun_acces_reseau_dans_le_code():
-    """Le cahier des charges exige qu'aucune donnée ne quitte l'ordinateur."""
+def test_aucun_acces_reseau_hors_du_module_gemini():
+    """Aucune donnée ne quitte l'ordinateur, sauf par le client Gemini, utilisé seulement avec la clé de l'utilisateur."""
     interdits = re.compile(r"^\s*(import|from)\s+(socket|urllib|http|requests|ftplib|smtplib|ssl|PySide6\.QtNetwork)\b", re.M)
+    autorise = Path(__file__).parents[1] / "planificateur" / "ia" / "gemini.py"
     for fichier in (Path(__file__).parents[1] / "planificateur").rglob("*.py"):
+        if fichier == autorise:
+            continue
         assert not interdits.search(fichier.read_text(encoding="utf-8")), fichier.name
+    assert "generativelanguage.googleapis.com" in autorise.read_text(encoding="utf-8")  # une seule destination

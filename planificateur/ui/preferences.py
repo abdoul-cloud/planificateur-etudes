@@ -6,6 +6,7 @@ from datetime import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QLineEdit,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from .. import modeles as m
 from ..base import Base
+from ..ia import cle as cle_ia
 from .theme import bouton_role, en_tete, icone
 from .commun import (
     _ChoixJours,
@@ -207,11 +209,15 @@ class PagePreferences(QWidget):
         disposition_moments.setSpacing(14)
         ligne_libres = QHBoxLayout()
         for w in (QLabel("Autres moments libres : séances de"), self.minutes_libres,
-                  QLabel("espacées d'au moins"), self.espace_libres,
-                  QLabel("les jours"), self.jours_libres):
+                  QLabel("espacées d'au moins"), self.espace_libres):
             ligne_libres.addWidget(w)
         ligne_libres.addStretch()
+        ligne_jours = QHBoxLayout()
+        ligne_jours.addWidget(QLabel("les jours :"))
+        ligne_jours.addWidget(self.jours_libres)
+        ligne_jours.addStretch()
         disposition_moments.addLayout(ligne_libres)
+        disposition_moments.addLayout(ligne_jours)
         for libelle, editeur in (("Garantis : toujours remplis de travail (sauf activité, pause ou sommeil) — par défaut du lundi au vendredi, 20 h – 23 h", self.garanties),
                                  ("Préférés : choisis en premier", self.preferees),
                                  ("À éviter : utilisés seulement si nécessaire", self.evitees)):
@@ -224,7 +230,7 @@ class PagePreferences(QWidget):
         self.revisions = champ_minutes(300, 3000)
         self.repos_epreuve = champ_minutes(180, 1440)
         self.max_jour_epreuve = champ_minutes(120, 1440)
-        self.libre_apres = QCheckBox("Aucune séance après une épreuve, jusqu'au lendemain")
+        self.libre_apres = QCheckBox("Soirée libre (rien jusqu'au lendemain)")
         self.marge = _nombre(12, 0, 168, " h")
         self.horizon = _nombre(3, 1, 12, " semaines")
         echeances = QGroupBox("Échéances et révisions")
@@ -267,10 +273,12 @@ class PagePreferences(QWidget):
         colonne.addLayout(grille)
         colonne.addWidget(jours)
         colonne.addWidget(moments)
+        self.section_ia = SectionAssistant(base)
+        colonne.addWidget(self.section_ia)
         colonne.addStretch()
         defilement = QScrollArea()
         defilement.setWidgetResizable(True)
-        defilement.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        defilement.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         defilement.setWidget(contenu)
         disposition = QVBoxLayout(self)
         disposition.setContentsMargins(28, 24, 16, 8)
@@ -363,6 +371,119 @@ class PagePreferences(QWidget):
         QTimer.singleShot(2500, self.confirmation.hide)
         self.preferences_enregistrees.emit()
         return True
+
+
+class SectionAssistant(QGroupBox):
+    """Clé Gemini, modèle, activation et test de connexion (enregistrés tout de suite)."""
+
+    reglages_changes = Signal()
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__("Assistant IA (Gemini) — facultatif", parent)
+        self.base = base
+        self.client_test = None  # remplaçable dans les tests
+        aide = QLabel(
+            "L'assistant et l'import d'emploi du temps (image ou PDF) utilisent Gemini, avec votre propre clé. "
+            "Quand vous vous en servez, seuls votre message, les données utiles du planificateur et le fichier "
+            "joint sont envoyés à Google — rien d'autre de votre ordinateur. Sans clé, tout reste hors ligne. "
+            "<a href=\"https://aistudio.google.com/apikey\">Obtenir une clé gratuite (Google AI Studio)</a>"
+        )
+        aide.setWordWrap(True)
+        aide.setOpenExternalLinks(True)
+        aide.setObjectName("doux")
+        self.etat = QLabel()
+        self.etat.setObjectName("pastille")
+        self.champ_cle = QLineEdit()
+        self.champ_cle.setEchoMode(QLineEdit.EchoMode.Password)
+        self.champ_cle.setPlaceholderText("Collez votre clé API ici")
+        enregistrer = bouton_role(QPushButton("Enregistrer la clé"), "primaire")
+        enregistrer.clicked.connect(self.enregistrer_cle)
+        effacer = bouton_role(QPushButton("Effacer la clé"), "danger")
+        effacer.clicked.connect(self.effacer_cle)
+        self.champ_modele = QLineEdit()
+        self.champ_modele.setPlaceholderText(cle_ia.MODELE_PAR_DEFAUT)
+        self.champ_modele.editingFinished.connect(lambda: cle_ia.definir_modele(self.base, self.champ_modele.text()))
+        self.tester_bouton = QPushButton("Tester la connexion")
+        self.tester_bouton.clicked.connect(self.tester)
+        self.actif = QCheckBox("Activer l'assistant et l'import par IA")
+        self.actif.toggled.connect(self._basculer)
+        self.resultat = QLabel()
+        self.resultat.setWordWrap(True)
+
+        colonne_ia = QVBoxLayout(self)
+        colonne_ia.addWidget(aide)
+        f = QFormLayout()
+        colonne_ia.addLayout(f)
+        self.champ_cle.setMinimumWidth(160)
+        self.champ_modele.setMinimumWidth(160)
+        f.addRow("État", _avec_texte(self.etat, ""))
+        ligne_cle = QHBoxLayout()
+        for w in (self.champ_cle, enregistrer, effacer):
+            ligne_cle.addWidget(w)
+        f.addRow("Clé API", ligne_cle)
+        ligne_modele = QHBoxLayout()
+        ligne_modele.addWidget(self.champ_modele, 1)
+        ligne_modele.addWidget(self.tester_bouton)
+        f.addRow("Modèle", ligne_modele)
+        f.addRow("", self.actif)
+        f.addRow("", self.resultat)
+        self.rafraichir()
+
+    def rafraichir(self) -> None:
+        presente = cle_ia.lire_cle(self.base) is not None
+        self.etat.setText("Clé enregistrée (chiffrée)" if presente else "Aucune clé : assistant désactivé")
+        self.champ_modele.setText(cle_ia.modele(self.base))
+        self.actif.blockSignals(True)
+        self.actif.setChecked(cle_ia.est_actif(self.base))
+        self.actif.setEnabled(presente)
+        self.actif.blockSignals(False)
+        self.tester_bouton.setEnabled(presente)
+
+    def _basculer(self, actif: bool) -> None:
+        cle_ia.definir_actif(self.base, actif)
+        self.reglages_changes.emit()
+
+    def enregistrer_cle(self) -> bool:
+        try:
+            cle_ia.enregistrer_cle(self.base, self.champ_cle.text())
+        except (ValueError, RuntimeError, OSError) as erreur:
+            self.resultat.setText(f"⚠ {erreur}")
+            return False
+        self.champ_cle.clear()
+        cle_ia.definir_actif(self.base, True)
+        self.resultat.setText("Clé enregistrée. Vous pouvez tester la connexion.")
+        self.rafraichir()
+        self.reglages_changes.emit()
+        return True
+
+    def effacer_cle(self) -> None:
+        cle_ia.effacer_cle(self.base)
+        self.resultat.setText("Clé effacée : plus rien n'est envoyé à Gemini.")
+        self.rafraichir()
+        self.reglages_changes.emit()
+
+    def tester(self) -> None:
+        from ..ia.gemini import ClientGemini
+        from .fond import en_fond
+
+        cle_ia.definir_modele(self.base, self.champ_modele.text())
+        cle = cle_ia.lire_cle(self.base)
+        if not cle:
+            self.resultat.setText("⚠ Enregistrez d'abord une clé.")
+            return
+        client = self.client_test or ClientGemini(cle, cle_ia.modele(self.base))
+        self.tester_bouton.setEnabled(False)
+        self.resultat.setText("Test en cours…")
+
+        def reussi(texte):
+            self.tester_bouton.setEnabled(True)
+            self.resultat.setText(f"✓ Connexion réussie avec « {client.modele} ».")
+
+        def echoue(message):
+            self.tester_bouton.setEnabled(True)
+            self.resultat.setText(f"⚠ {message}")
+
+        en_fond(client.tester, reussi, echoue)
 
 
 def _avec_texte(champ: QWidget, texte: str) -> QWidget:
