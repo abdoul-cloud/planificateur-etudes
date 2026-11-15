@@ -13,6 +13,8 @@ AppName={#NomApp}
 AppVersion={#Version}
 AppVerName={#NomApp} {#Version}
 AppPublisher=Abdoul Aziz
+AppPublisherURL=https://github.com/abdoul-cloud/planificateur-etudes
+AppSupportURL=https://github.com/abdoul-cloud/planificateur-etudes/issues
 VersionInfoVersion={#Version}
 VersionInfoDescription=Installation de {#NomApp}
 ; Installation pour l'utilisateur courant : aucun droit administrateur nécessaire
@@ -41,6 +43,8 @@ Name: "bureau"; Description: "Créer un raccourci sur le Bureau"; GroupDescripti
 
 [Files]
 Source: "..\build\dist\PlanificateurEtudes\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+Source: "..\MENTIONS-LEGALES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#NomApp}"; Filename: "{app}\{#Exe}"
