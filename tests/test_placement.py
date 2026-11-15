@@ -20,8 +20,10 @@ DIMANCHE_AVANT = date(2026, 11, 15)
 
 
 def sans_garantie(**options) -> m.Preferences:
-    """Préférences de test sans plages garanties (testées à part dans test_garanties.py)."""
+    """Préférences de test sans plages garanties ni moments libres occupés
+    (testés à part dans test_garanties.py et test_remplissage.py)."""
     options.setdefault("plages_garanties", [])
+    options.setdefault("remplissage_jours", [])
     return m.Preferences(**options)
 
 LUNDI, MARDI, MERCREDI, JEUDI, VENDREDI, SAMEDI, DIMANCHE = (
@@ -300,10 +302,11 @@ def test_semaine_sans_epreuve_revisions_dans_le_budget():
     verifier_contraintes(res, prefs)
 
 
-def test_revision_placee_un_a_deux_jours_apres_le_cours():
+def test_revision_placee_la_veille_ou_l_avant_veille_du_cours():
+    # Cours le vendredi : on le révise le jeudi, sinon le mercredi (pas le lundi d'après).
     prefs = sans_garantie(minutes_revision_semaine=90)  # 2 séances
-    res = planifier(LUNDI, DIMANCHE, prefs, [MATHS], [cours(MATHS, 0, 7, 12)])
-    assert {s.debut.date() for s in res.seances} == {MARDI, MERCREDI}
+    res = planifier(LUNDI, DIMANCHE, prefs, [MATHS], [cours(MATHS, 4, 7, 12)])
+    assert {s.debut.date() for s in res.seances} == {MERCREDI, JEUDI}
 
 
 def test_revisions_ne_prennent_pas_la_place_des_echeances():

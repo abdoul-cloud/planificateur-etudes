@@ -14,6 +14,9 @@ Déroulement :
    choisies en premier.
 4. Les plages garanties encore libres sont remplies : d'abord avec ce qui
    manque aux échéances, puis avec des révisions, même au-delà du budget.
+   Ensuite, du lundi au vendredi, chaque autre moment libre reçoit des
+   séances espacées (sans entasser). Une révision de cours se place de préférence
+   la veille du cours, sinon l'avant-veille.
 5. S'il reste de la place sous la limite de chaque jour, on ajoute les
    révisions régulières, dans la limite du budget hebdomadaire.
 6. Ce qui ne tient pas est renvoyé dans `non_places`, avec les minutes
@@ -294,24 +297,76 @@ def _placer_besoin(agenda: _Agenda, besoin: _Besoin) -> int:
     return 0
 
 
-def _placer_revisions(
-    agenda: _Agenda,
-    matieres: list[Matiere],
-    du: date,
-    au: date,
-    activites: list[ActiviteFixe],
-    exceptions: list[ExceptionActivite],
-) -> list[Deficit]:
+def _matiere_de(activite: ActiviteFixe, matieres: list[Matiere]) -> int | None:
+    """Matière d'une activité : celle choisie, sinon celle dont le nom correspond."""
+    if activite.matiere_id is not None:
+        return activite.matiere_id
+    nom = activite.nom.strip().lower()
+    for matiere in matieres:
+        autre = matiere.nom.strip().lower()
+        if autre and (autre in nom or nom in autre):
+            return matiere.id
+    return None
+
+
+def _jours_favorables(
+    matieres: list[Matiere], activites: list[ActiviteFixe], exceptions: list[ExceptionActivite], du: date, au: date
+) -> dict[int, dict[date, int]]:
+    """Pour chaque matière, les bons jours pour la réviser : 2 la veille d'un cours, 1 l'avant-veille.
+
+    On révise avant le cours, pour y arriver préparé : un cours du vendredi se
+    révise de préférence le jeudi, sinon le mercredi.
+    """
+    favorables: dict[int, dict[date, int]] = defaultdict(dict)
+    for activite, horaire in occurrences(activites, du, au + timedelta(days=2), exceptions):
+        matiere_id = _matiere_de(activite, matieres)
+        if matiere_id is None:
+            continue
+        jour_du_cours = horaire.debut.date()
+        for ecart, score in ((1, 2), (2, 1)):
+            jour = jour_du_cours - timedelta(days=ecart)
+            favorables[matiere_id][jour] = max(favorables[matiere_id].get(jour, 0), score)
+    return favorables
+
+
+def _choisir_matiere(matieres, jour: date, favorables, compte, deja_ce_jour: set[int]) -> Matiere:
+    """Matière à réviser : variée dans la journée, puis la veille / l'avant-veille du cours, puis selon le poids."""
+    return max(
+        matieres,
+        key=lambda m: (
+            m.id not in deja_ce_jour,
+            favorables.get(m.id, {}).get(jour, 0),
+            poids_matiere(m) / (compte[m.id] + 1),
+        ),
+    )
+
+
+def _placer_contenu(agenda, creneau: Intervalle, besoins, matieres, favorables, compte) -> None:
+    """Met dans `creneau` ce qui manque à une échéance, sinon une révision."""
+    jour = creneau.debut.date()
+    besoin = next((b for b in besoins if b.minutes > 0 and b.echeance >= creneau.fin), None)
+    if besoin is not None:
+        duree = min(creneau.minutes, _minutes_grille(besoin.minutes))
+        creneau = Intervalle(creneau.debut, creneau.debut + timedelta(minutes=duree))
+        cible = {"epreuve_id" if besoin.type is TypeSeance.PREPARATION else "travail_id": besoin.reference_id}
+        seance = agenda.placer(creneau, type=besoin.type, matiere_id=besoin.matiere_id, **cible)
+        besoin.minutes = max(0, besoin.minutes - seance.minutes)
+        besoin.jours_utilises.add(jour)
+        return
+    if not matieres:
+        agenda.bloquer(creneau)  # rien à réviser : le moment reste libre
+        return
+    deja = {s.matiere_id for s in agenda.nouvelles if s.type is TypeSeance.REVISION and s.debut.date() == jour}
+    matiere = _choisir_matiere(matieres, jour, favorables, compte, deja)
+    agenda.placer(creneau, type=TypeSeance.REVISION, matiere_id=matiere.id)
+    compte[matiere.id] += 1
+
+
+def _placer_revisions(agenda: _Agenda, matieres: list[Matiere], du: date, au: date, favorables) -> list[Deficit]:
+    """Révisions du budget hebdomadaire qui restent après les plages garanties et les moments libres."""
     p = agenda.p
     if p.minutes_revision_semaine <= 0 or not matieres:
         return []
-
-    # Jours qui suivent un cours de la matière (1 à 2 jours après).
-    apres_cours: dict[int, set[date]] = defaultdict(set)
-    for activite, horaire in occurrences(activites, du - timedelta(days=2), au, exceptions):
-        if activite.matiere_id is not None:
-            jour = horaire.debut.date()
-            apres_cours[activite.matiere_id] |= {jour + timedelta(days=1), jour + timedelta(days=2)}
 
     manques: dict[int, int] = defaultdict(int)
     duree = p.duree_min_seance
@@ -331,13 +386,14 @@ def _placer_revisions(
 
         for matiere in sorted(matieres, key=poids_matiere, reverse=True):
             jours_matiere: set[date] = set()
+            bons_jours = favorables.get(matiere.id, {})
             for _ in range(repartition[matiere.id]):
                 meilleur = None
                 for c in agenda.candidats(duree, limite, apres):
                     jour = c.debut.date()
                     cle = (
                         jour in jours_matiere,  # 1) une révision par jour et par matière
-                        jour not in apres_cours[matiere.id],  # 2) 1 à 2 jours après le cours
+                        -bons_jours.get(jour, 0),  # 2) la veille du cours, sinon l'avant-veille
                         -niveau_preference(c, p),  # 3) plages préférées
                         agenda.charge[jour],  # 4) le jour le moins chargé
                         jour,  # 5) le plus tôt dans la semaine
@@ -370,82 +426,90 @@ def _decouper(minutes: int, p: Preferences) -> int:
     return p.duree_max_seance
 
 
-def _remplir_plages_garanties(
-    agenda: _Agenda,
-    besoins: list[_Besoin],
-    matieres: list[Matiere],
-    du: date,
-    au: date,
-    activites: list[ActiviteFixe],
-    exceptions: list[ExceptionActivite],
-    maintenant: datetime,
-) -> None:
-    """Remplit chaque morceau libre des plages garanties.
+def _remplir_plages_garanties(agenda: _Agenda, besoins, matieres, favorables, compte, du: date, au: date,
+                              maintenant: datetime) -> None:
+    """Remplit entièrement chaque morceau libre des plages garanties.
 
-    Priorité : le reste des échéances (préparations, travaux) dont la date
-    limite est après la séance, puis des révisions choisies selon le poids des
-    matières, de préférence 1 à 2 jours après le cours. La limite du jour et
-    le budget de révisions ne s'appliquent pas ici : c'est le principe même
-    d'une plage garantie.
+    Priorité : le reste des échéances dont la date limite est après la séance,
+    puis des révisions (la veille ou l'avant-veille du cours d'abord). La limite
+    du jour et le budget de révisions ne s'appliquent pas ici : c'est le
+    principe même d'une plage garantie.
     """
     p = agenda.p
-    if not p.plages_garanties:
-        return
-    apres_cours: dict[int, set[date]] = defaultdict(set)
-    for activite, horaire in occurrences(activites, du - timedelta(days=2), au, exceptions):
-        if activite.matiere_id is not None:
-            jour = horaire.debut.date()
-            apres_cours[activite.matiere_id] |= {jour + timedelta(days=1), jour + timedelta(days=2)}
-    compte: dict[int, int] = defaultdict(int)  # séances de révision garanties par matière (équilibre)
-
     jour = du
     while jour <= au:
-        revisees_ce_jour: set[int] = set()
         for plage in p.plages_garanties:
             if jour.weekday() not in plage.jours:
                 continue
             zone = Intervalle(datetime.combine(jour, plage.debut), datetime.combine(jour, plage.fin))
             while True:
                 morceaux = [
-                    Intervalle(max(l.debut, zone.debut), min(l.fin, zone.fin))
+                    Intervalle(arrondir_grille(max(l.debut, zone.debut), vers_le_haut=True), min(l.fin, zone.fin))
                     for l in agenda.libres
                     if l.chevauche(zone)
-                ]
-                morceaux = [
-                    Intervalle(arrondir_grille(x.debut, vers_le_haut=True), x.fin)
-                    for x in morceaux
                 ]
                 morceaux = [x for x in morceaux if x.debut >= maintenant and x.minutes >= p.duree_min_seance]
                 if not morceaux:
                     break
                 morceau = min(morceaux)
                 duree = _decouper(_minutes_grille(morceau.minutes, vers_le_haut=False), p)
-                creneau = Intervalle(morceau.debut, morceau.debut + timedelta(minutes=duree))
+                _placer_contenu(agenda, Intervalle(morceau.debut, morceau.debut + timedelta(minutes=duree)),
+                                besoins, matieres, favorables, compte)
+        jour += timedelta(days=1)
 
-                besoin = next(
-                    (b for b in besoins if b.minutes > 0 and b.echeance >= creneau.fin), None
-                )
-                if besoin is not None:
-                    duree = min(duree, _minutes_grille(besoin.minutes))
-                    creneau = Intervalle(creneau.debut, creneau.debut + timedelta(minutes=duree))
-                    cible = {"epreuve_id" if besoin.type is TypeSeance.PREPARATION else "travail_id": besoin.reference_id}
-                    seance = agenda.placer(creneau, type=besoin.type, matiere_id=besoin.matiere_id, **cible)
-                    besoin.minutes = max(0, besoin.minutes - seance.minutes)
-                    besoin.jours_utilises.add(jour)
+
+def _occuper_moments_libres(agenda: _Agenda, besoins, matieres, favorables, compte, du: date, au: date,
+                            maintenant: datetime) -> None:
+    """Occupe les moments libres des jours choisis (lundi → vendredi par défaut), sans entasser.
+
+    Séance après séance, on prend le plus grand moment encore libre de la
+    journée et on y pose une séance de la durée réglée (45 min par défaut),
+    au milieu. Entre deux de ces séances, on garde une respiration d'au moins
+    `remplissage_espace` minutes. On s'arrête à la limite de travail du jour :
+    le matin et l'après-midi sont ainsi servis à parts égales.
+    """
+    p = agenda.p
+    if not p.remplissage_jours:
+        return
+    longueur = max(p.remplissage_minutes, p.duree_min_seance)
+    espace = timedelta(minutes=p.remplissage_espace)
+    jour = du
+    while jour <= au:
+        if jour.weekday() in p.remplissage_jours:
+            debut_jour = datetime.combine(jour, time.min)
+            fin_jour = debut_jour + timedelta(days=1)
+            ajoutees: list[Seance] = []
+            ignores: set[tuple[datetime, datetime]] = set()  # moments où il n'y avait rien à mettre
+            while agenda.reste_du_jour(jour) >= p.duree_min_seance:
+                candidats = []
+                for libre in agenda.libres:
+                    if not debut_jour <= libre.debut < fin_jour or (libre.debut, libre.fin) in ignores:
+                        continue
+                    debut = arrondir_grille(max(libre.debut, maintenant), vers_le_haut=True)
+                    fin = libre.fin
+                    avant = [s.fin for s in ajoutees if s.fin <= libre.debut]
+                    apres = [s.debut for s in ajoutees if s.debut >= libre.fin]
+                    if avant:
+                        debut = max(debut, arrondir_grille(max(avant) + espace, vers_le_haut=True))
+                    if apres:
+                        fin = min(fin, min(apres) - espace)
+                    place = int((fin - debut).total_seconds() // 60)
+                    if place >= p.duree_min_seance:
+                        candidats.append((place, debut, libre))
+                if not candidats:
+                    break
+                place, debut, libre = max(candidats, key=lambda c: (c[0], -c[1].timestamp()))
+                duree = _minutes_grille(min(place, longueur, agenda.reste_du_jour(jour)), vers_le_haut=False)
+                if duree < p.duree_min_seance:
+                    break
+                decalage = _minutes_grille((place - duree) / 2, vers_le_haut=False)
+                creneau = Intervalle(debut + timedelta(minutes=decalage), debut + timedelta(minutes=decalage + duree))
+                nombre = len(agenda.nouvelles)
+                _placer_contenu(agenda, creneau, besoins, matieres, favorables, compte)
+                if len(agenda.nouvelles) == nombre:
+                    ignores.add((libre.debut, libre.fin))
                     continue
-                if not matieres:
-                    agenda.bloquer(creneau)  # rien à réviser : on laisse le temps libre
-                    continue
-                matiere = max(
-                    matieres,
-                    key=lambda m: (
-                        m.id not in revisees_ce_jour,
-                        poids_matiere(m) * (1.5 if jour in apres_cours[m.id] else 1) / (compte[m.id] + 1),
-                    ),
-                )
-                agenda.placer(creneau, type=TypeSeance.REVISION, matiere_id=matiere.id)
-                compte[matiere.id] += 1
-                revisees_ce_jour.add(matiere.id)
+                ajoutees.append(agenda.nouvelles[-1])
         jour += timedelta(days=1)
 
 
@@ -558,14 +622,17 @@ def planifier(
     besoins.sort(key=lambda b: (b.echeance, -b.importance))
     for besoin in besoins:
         besoin.minutes = _placer_besoin(agenda, besoin)
-    _remplir_plages_garanties(agenda, besoins, matieres, du, au, activites, exceptions, maintenant)
+    favorables = _jours_favorables(matieres, activites, exceptions, du, au)
+    compte: dict[int, int] = defaultdict(int)  # révisions placées par matière, pour l'équilibre
+    _remplir_plages_garanties(agenda, besoins, matieres, favorables, compte, du, au, maintenant)
+    _occuper_moments_libres(agenda, besoins, matieres, favorables, compte, du, au, maintenant)
     for besoin in besoins:
         if besoin.minutes:
             non_places.append(
                 Deficit(besoin.type, besoin.reference_id, besoin.intitule, besoin.minutes, besoin.echeance)
             )
 
-    non_places += _placer_revisions(agenda, matieres, du, au, activites, exceptions)
+    non_places += _placer_revisions(agenda, matieres, du, au, favorables)
 
     occupes = periodes_occupees(du, au, activites, exceptions, epreuves)
     conflits = [

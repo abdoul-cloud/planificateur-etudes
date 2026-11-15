@@ -288,6 +288,11 @@ class Preferences:
     # activités fixes, épreuves, pauses et le sommeil passent avant), même au-delà
     # du budget de révisions et de la limite du jour.
     plages_garanties: list[PlageHebdo] = field(default_factory=_plages_garanties_par_defaut)
+    # Moments libres des jours choisis (lundi → vendredi par défaut) : une séance
+    # de `remplissage_minutes` dans chacun, sans entasser.
+    remplissage_jours: list[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
+    remplissage_minutes: int = 45
+    remplissage_espace: int = 60  # respiration minimale entre deux de ces séances
     marge_echeance_heures: int = 12
     horizon_semaines: int = 3
     # Révisions régulières : temps visé par semaine, placé seulement s'il
@@ -301,6 +306,9 @@ class Preferences:
     libre_apres_epreuve: bool = True
 
     def __post_init__(self) -> None:
+        if (any(not 0 <= j <= 6 for j in self.remplissage_jours) or self.remplissage_minutes <= 0
+                or self.remplissage_espace < 0):
+            raise ValueError("Réglage des moments libres invalide")
         if self.minutes_revision_semaine < 0:
             raise ValueError("Le temps de révision ne peut pas être négatif")
         if self.repos_avant_epreuve_min < 0 or self.max_minutes_jour_epreuve < 0:

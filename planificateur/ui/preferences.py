@@ -27,6 +27,7 @@ from .. import modeles as m
 from ..base import Base
 from .theme import bouton_role, en_tete, icone
 from .commun import (
+    _ChoixJours,
     JOURS,
     EditeurPlages,
     EditeurPlagesHebdo,
@@ -198,9 +199,19 @@ class PagePreferences(QWidget):
         self.preferees = EditeurPlagesHebdo()
         self.evitees = EditeurPlagesHebdo()
         self.garanties = EditeurPlagesHebdo()
+        self.jours_libres = _ChoixJours([0, 1, 2, 3, 4])
+        self.minutes_libres = champ_minutes(45, 240, minimum=15, pas=15)
+        self.espace_libres = champ_minutes(60, 480, pas=15)
         moments = QGroupBox("Moments de travail : garantis, préférés, à éviter")
         disposition_moments = QVBoxLayout(moments)
         disposition_moments.setSpacing(14)
+        ligne_libres = QHBoxLayout()
+        for w in (QLabel("Autres moments libres : séances de"), self.minutes_libres,
+                  QLabel("espacées d'au moins"), self.espace_libres,
+                  QLabel("les jours"), self.jours_libres):
+            ligne_libres.addWidget(w)
+        ligne_libres.addStretch()
+        disposition_moments.addLayout(ligne_libres)
         for libelle, editeur in (("Garantis : toujours remplis de travail (sauf activité, pause ou sommeil) — par défaut du lundi au vendredi, 20 h – 23 h", self.garanties),
                                  ("Préférés : choisis en premier", self.preferees),
                                  ("À éviter : utilisés seulement si nécessaire", self.evitees)):
@@ -292,6 +303,10 @@ class PagePreferences(QWidget):
         self.preferees.definir(p.plages_preferees)
         self.evitees.definir(p.plages_evitees)
         self.garanties.definir(p.plages_garanties)
+        for n, case in enumerate(self.jours_libres.cases):
+            case.setChecked(n in p.remplissage_jours)
+        self.minutes_libres.setValue(p.remplissage_minutes)
+        self.espace_libres.setValue(p.remplissage_espace)
         self.revisions.setValue(p.minutes_revision_semaine)
         self.repos_epreuve.setValue(p.repos_avant_epreuve_min)
         self.max_jour_epreuve.setValue(p.max_minutes_jour_epreuve)
@@ -322,6 +337,9 @@ class PagePreferences(QWidget):
             plages_preferees=self.preferees.valeurs(),
             plages_evitees=self.evitees.valeurs(),
             plages_garanties=self.garanties.valeurs(),
+            remplissage_jours=self.jours_libres.jours(),
+            remplissage_minutes=self.minutes_libres.value(),
+            remplissage_espace=self.espace_libres.value(),
             marge_echeance_heures=self.marge.value(),
             horizon_semaines=self.horizon.value(),
             minutes_revision_semaine=self.revisions.value(),

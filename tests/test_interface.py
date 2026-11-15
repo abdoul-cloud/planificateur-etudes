@@ -212,7 +212,7 @@ def test_annulation_affichee_dans_l_emploi_du_temps(application, base):
 
 
 def _semaine_type(base, maths):
-    base.enregistrer_preferences(m.Preferences(plages_garanties=[]))
+    base.enregistrer_preferences(m.Preferences(plages_garanties=[], remplissage_jours=[]))
     base.activites.ajouter(m.ActiviteFixe("Algèbre", time(7), time(18), jour_semaine=0, matiere_id=maths.id))
     base.epreuves.ajouter(m.Epreuve(maths.id, datetime(2026, 11, 19, 14), datetime(2026, 11, 19, 16)))
 

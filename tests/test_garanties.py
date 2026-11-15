@@ -102,7 +102,7 @@ def test_repos_avant_une_epreuve_du_soir():
 
 
 def test_revisions_equilibrees_et_variees():
-    res = planifier(LUNDI, SEMAINE_JOURS[-1], m.Preferences(), MATIERES, SEMAINE)
+    res = planifier(LUNDI, SEMAINE_JOURS[-1], m.Preferences(remplissage_jours=[]), MATIERES, SEMAINE)
     revisions = [s for s in res.seances if s.type is m.TypeSeance.REVISION]
     par_matiere = {mid: sum(s.minutes for s in revisions if s.matiere_id == mid) for mid in (1, 2)}
     assert par_matiere[1] > par_matiere[2] > 0  # maths pèse plus, physique n'est pas oubliée
