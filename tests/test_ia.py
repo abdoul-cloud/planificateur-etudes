@@ -459,3 +459,56 @@ def test_preferences_indiquent_le_modele_de_secours(application, base, synchrone
     assert "gemini-3.6-flash" in section.resultat.text() and "surchargé" in section.resultat.text()
     section.choix_modele.setCurrentText("gemini-3.8-flash")
     assert cle_ia.modele(base) == "gemini-3.8-flash"  # le choix est enregistré aussitôt
+
+
+# --- Propositions sur plusieurs jours (cas réel : cours Coursera lundi et mardi matin) ---------
+
+
+@pytest.mark.parametrize("forme_du_jour", [
+    {"jours": ["lundi", "mardi"]},
+    {"jour": "Lundi et Mardi"},
+    {"jour": ["Lundi", "Mardi"]},
+    {"jour_semaine": "lun, mar"},
+    {"days": ["Monday", "Tuesday"]},
+    {"jours": [0, 1]},
+])
+def test_activite_sur_plusieurs_jours_quelle_que_soit_la_forme(remplie, forme_du_jour):
+    arguments = {"nom": "Cours en ligne Coursera", "type": "cours", "debut": "08:00", "fin": "12:00",
+                 "matiere": "Coursera", **forme_du_jour}
+    actions, erreurs = preparer(remplie, [Appel("ajouter_activite", arguments)])
+    assert not erreurs
+    assert [a.description.split(",")[1].split()[1] for a in actions] == ["lundi", "mardi"]
+    for action in actions:
+        appliquer(remplie, action)
+    activites = remplie.activites.lister()
+    assert sorted(a.jour_semaine for a in activites) == [0, 1]
+    assert all(a.matiere_id is None and a.heure_debut == time(8) for a in activites)  # « Coursera » n'est pas une matière
+
+
+def test_proposition_invalide_expliquee_au_lieu_de_rien_repondu(remplie):
+    faux = FauxGemini({"steps": [appel("ajouter_activite", nom="Coursera", type="cours", debut="08:00", fin="12:00")]})
+    texte_reponse, actions, erreurs = repondre(ClientGemini(CLE, "m", faux), remplie, [], "Ajoute Coursera")
+    assert not actions and texte_reponse.startswith("Je n'ai pas pu")
+    assert "jour" in erreurs[0] and "reçu" in erreurs[0]  # on voit ce que Gemini a envoyé
+
+
+def test_gemini_est_informe_des_propositions_et_resultats(application, remplie, synchrone):
+    from planificateur.ui.assistant_page import PageAssistant
+
+    faux = FauxGemini(
+        {"steps": [{"type": "model_output", "content": [{"type": "text", "text": "Je propose ceci."}]},
+                   appel("ajouter_activite", nom="Coursera", type="cours", jours=["lundi"], debut="08:00", fin="12:00")]},
+        texte("C'est fait."),
+    )
+    page = PageAssistant(remplie)
+    page.client = ClientGemini(CLE, "m", faux)
+    page.rafraichir()
+    page.envoyer("Mets mon cours Coursera du lundi matin")
+    page.cartes[0].appliquer()
+    page.envoyer("Merci")
+    second_envoi = faux.envois[1][1]["input"]
+    assert "Propositions faites" in second_envoi and "Résultat pour" in second_envoi
+    assert "Réponse reçue" not in json.dumps(page.dernier_envoi)  # l'envoi reste l'envoi
+    page.montrer_envoi()
+    assert "Réponse reçue de Gemini" in page.dialogue_envoi.findChild(type(page.saisie)).toPlainText()
+    page.dialogue_envoi.close()

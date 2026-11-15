@@ -33,7 +33,7 @@ de deviner.
 
 Tu ne modifies rien toi-même. Pour ajouter ou changer quelque chose, appelle la fonction adaptée : \
 l'étudiant verra chaque proposition et décidera de l'appliquer. Une indisponibilité ponctuelle (sortie, \
-rendez-vous, sport…) s'ajoute avec « ajouter_activite » de type « personnel » à une date précise. Après des \
+rendez-vous, sport…) s'ajoute avec « ajouter_activite » de type « personnel » à une date précise. Une activité qui revient chaque semaine sur plusieurs jours s'ajoute en un seul appel, \navec tous ses jours dans « jours » (sans date). Après des \
 changements qui touchent le planning, propose aussi « regenerer_planning ». Les noms de matière doivent être \
 pris dans la liste fournie. Dates au format AAAA-MM-JJ, heures au format HH:MM.
 
@@ -70,7 +70,8 @@ OUTILS = [
         "nom": _TEXTE,
         "type": {"type": "string", "enum": ["cours", "td", "tp", "personnel", "deplacement", "autre"]},
         "date": {**_TEXTE, "description": "AAAA-MM-JJ pour une seule fois"},
-        "jour": {"type": "string", "enum": JOURS, "description": "Pour une activité chaque semaine (sans date)"},
+        "jours": {"type": "array", "items": {"type": "string", "enum": JOURS},
+                  "description": "Pour une activité chaque semaine (sans date) : un ou plusieurs jours"},
         "debut": {**_TEXTE, "description": "HH:MM"},
         "fin": {**_TEXTE, "description": "HH:MM"},
         "matiere": {**_TEXTE, "description": "Matière liée, s'il s'agit d'un cours"},
@@ -184,14 +185,15 @@ def construire(base: Base, nom: str, a: dict):
                          int(a.get("minutes_estimees") or 60))
     if nom == "ajouter_activite":
         matiere_id = None
-        if a.get("matiere"):
-            matiere_id = _matiere(base, a.get("matiere")).id
+        if a.get("matiere"):  # facultative pour une activité : un nom inconnu (ex. « Coursera ») n'empêche rien
+            matiere_id = associer_matiere(str(a["matiere"]), base.matieres.lister())
         jour_unique = _date(a["date"]) if a.get("date") else None
         jour_semaine = None
         if jour_unique is None:
-            if str(a.get("jour", "")).lower() not in JOURS:
+            jours = jours_de(a)
+            if not jours:
                 raise ValueError("Indiquez une date ou un jour de la semaine.")
-            jour_semaine = JOURS.index(str(a["jour"]).lower())
+            jour_semaine = jours[0]
         return m.ActiviteFixe(str(a.get("nom", "")).strip() or "Activité", _heure(a.get("debut")), _heure(a.get("fin")),
                               type=m.TypeActivite(a.get("type", "autre")), jour_semaine=jour_semaine,
                               date=jour_unique, matiere_id=matiere_id)
@@ -228,13 +230,65 @@ def decrire(base: Base, nom: str, a: dict) -> str:
     return "Recalculer le planning"
 
 
+_NOMS_JOURS = {
+    **{nom: n for n, nom in enumerate(JOURS)},
+    **{nom[:3]: n for n, nom in enumerate(JOURS)},
+    **{nom: n for n, nom in enumerate(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])},
+}
+
+
+def jours_de(arguments: dict) -> list[int]:
+    """Jours de la semaine (0 = lundi) dans une proposition, quelle que soit leur forme.
+
+    Accepte « jours » ou « jour » (et variantes), une liste ou un texte comme
+    « Lundi et Mardi », les abréviations, l'anglais ou un numéro.
+    """
+    import re
+    import unicodedata
+
+    valeurs = []
+    for cle in ("jours", "jour", "jour_semaine", "jours_semaine", "days", "day"):
+        valeur = arguments.get(cle)
+        if valeur is None or valeur == "":
+            continue
+        valeurs += valeur if isinstance(valeur, list) else [valeur]
+    jours: list[int] = []
+    for valeur in valeurs:
+        if isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+            numero = int(valeur)
+            candidats = [min(numero, 6)] if numero >= 0 else []
+        else:
+            texte = unicodedata.normalize("NFD", str(valeur).lower())
+            texte = "".join(c for c in texte if unicodedata.category(c) != "Mn")
+            candidats = [_NOMS_JOURS[mot] for mot in re.findall(r"[a-z]+", texte) if mot in _NOMS_JOURS]
+        for jour in candidats:
+            if jour not in jours:
+                jours.append(jour)
+    return jours
+
+
+def _developper(appel) -> list:
+    """Une activité hebdomadaire sur plusieurs jours devient une proposition par jour."""
+    from .gemini import Appel
+
+    if appel.nom != "ajouter_activite" or appel.arguments.get("date"):
+        return [appel]
+    jours = jours_de(appel.arguments)
+    if len(jours) <= 1:
+        return [appel]
+    base_args = {k: v for k, v in appel.arguments.items()
+                 if k not in ("jours", "jour", "jour_semaine", "jours_semaine", "days", "day")}
+    return [Appel(appel.nom, {**base_args, "jour": JOURS[j]}) for j in jours]
+
+
 def preparer(base: Base, appels) -> tuple[list[Action], list[str]]:
     actions, erreurs = [], []
-    for appel in appels:
+    for appel in [a for brut in appels for a in _developper(brut)]:
         try:
             actions.append(Action(appel.nom, appel.arguments, decrire(base, appel.nom, appel.arguments)))
         except (ValueError, TypeError, KeyError) as erreur:
-            erreurs.append(f"Proposition ignorée ({appel.nom}) : {erreur}")
+            recu = ", ".join(f"{k}={v!r}" for k, v in appel.arguments.items())
+            erreurs.append(f"Proposition ignorée ({appel.nom}) : {erreur} [reçu : {recu}]")
     return actions, erreurs
 
 
@@ -304,6 +358,8 @@ def interpreter_reponse(base: Base, reponse) -> tuple[str, list[Action], list[st
     texte = reponse.texte
     if not texte and actions:
         texte = "Voici ce que je propose :"
+    if not texte and erreurs:
+        texte = "Je n'ai pas pu formuler une proposition valable :"
     if not texte and not actions:
         raise ErreurGemini("Gemini n'a rien répondu. Reformulez votre demande.")
     return texte, actions, erreurs

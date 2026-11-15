@@ -73,6 +73,7 @@ class _CarteAction(QFrame):
         self.appliquer_bouton.hide()
         self.ignorer_bouton.hide()
         self.texte.setText(texte)
+        self.page.historique.append(("assistant", f"[Résultat pour « {self.action.description} » : {texte}]"))
 
     def appliquer(self) -> bool:
         try:
@@ -99,6 +100,7 @@ class PageAssistant(QWidget):
         self.maintenant: datetime | None = None
         self.historique: list[tuple[str, str]] = []
         self.dernier_envoi: dict | None = None
+        self.derniere_reponse: dict | None = None
         self.cartes: list[_CarteAction] = []
 
         entete, actions = en_tete(
@@ -241,13 +243,19 @@ class PageAssistant(QWidget):
 
         def recu(reponse):
             self.dernier_envoi = client.dernier_envoi
+            self.derniere_reponse = getattr(reponse, "brut", None)
             self._fin_attente()
             try:
                 reponse_texte, actions, erreurs = interpreter_reponse(self.base, reponse)
             except ErreurGemini as erreur:
                 self._ajouter(_Bulle(f"⚠ {erreur}", de_moi=False))
                 return
-            self.historique.append(("assistant", reponse_texte))
+            memo = reponse_texte
+            if actions:
+                memo += " [Propositions faites : " + " ; ".join(a.description for a in actions) + "]"
+            if erreurs:
+                memo += " [Propositions refusées par l'application : " + " ; ".join(erreurs) + "]"
+            self.historique.append(("assistant", memo))
             self._ajouter(_Bulle(reponse_texte, de_moi=False))
             for action in actions:
                 carte_action = _CarteAction(self, action)
@@ -272,14 +280,17 @@ class PageAssistant(QWidget):
         if self.dernier_envoi is None:
             return
         dialogue = QDialog(self)
-        dialogue.setWindowTitle("Dernier envoi à Gemini")
+        dialogue.setWindowTitle("Dernier échange avec Gemini")
         dialogue.resize(860, 640)
         explication = QLabel(
             "Voici exactement ce qui a été envoyé à Google lors du dernier message (la clé API n'y figure pas : "
             "elle voyage à part, chiffrée par la connexion HTTPS)."
         )
         explication.setWordWrap(True)
-        contenu = QPlainTextEdit(json.dumps(self.dernier_envoi, ensure_ascii=False, indent=2))
+        texte = json.dumps(self.dernier_envoi, ensure_ascii=False, indent=2)
+        if self.derniere_reponse is not None:
+            texte += "\n\n───── Réponse reçue de Gemini ─────\n" + json.dumps(self.derniere_reponse, ensure_ascii=False, indent=2)
+        contenu = QPlainTextEdit(texte)
         contenu.setReadOnly(True)
         boutons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         boutons.button(QDialogButtonBox.StandardButton.Close).setText("Fermer")
