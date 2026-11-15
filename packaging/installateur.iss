@@ -4,7 +4,7 @@
 ; L'application doit d'abord être construite dans build\dist\PlanificateurEtudes (PyInstaller).
 
 #define NomApp "Planificateur d'études"
-#define Version "0.2.0"
+#define Version "0.3.0"
 #define Exe "PlanificateurEtudes.exe"
 
 [Setup]
