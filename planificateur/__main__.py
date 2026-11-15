@@ -15,7 +15,7 @@ from .base import Base
 from .ui.fenetre import FenetrePrincipale
 from .ui.theme import IMAGES, appliquer_theme
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 
 def _autotest() -> int:
