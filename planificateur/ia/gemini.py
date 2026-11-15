@@ -65,6 +65,13 @@ def bloc_fichier(chemin: Path) -> dict:
     return {"type": type_bloc, "data": base64.b64encode(chemin.read_bytes()).decode("ascii"), "mime_type": mime}
 
 
+def verifier_https() -> None:
+    """Vérifie que la connexion sécurisée est disponible (sert à l'auto-test de l'exécutable)."""
+    import ssl
+
+    ssl.create_default_context()
+
+
 def _transport_http(url: str, corps: bytes, entetes: dict[str, str]) -> dict:
     requete = urllib.request.Request(url, data=corps, headers=entetes, method="POST")
     try:

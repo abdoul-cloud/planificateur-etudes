@@ -46,12 +46,9 @@ def _autotest() -> int:
         exporter_pdf(base, lundi, dossier / "planning.pdf")
         base.sauvegarder(dossier / "copie.db")
         # L'assistant IA a besoin du HTTPS : vérifie qu'il est bien embarqué (aucune requête envoyée).
-        import ssl
+        from .ia.gemini import verifier_https
 
-        from .ia.gemini import ClientGemini
-
-        ssl.create_default_context()
-        ClientGemini("x" * 30, "gemini-flash-latest")
+        verifier_https()
         base.fermer()
         journal.write_text("OK", encoding="utf-8")
         print(f"autotest OK — {dossier}")
