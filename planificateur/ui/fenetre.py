@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -52,14 +53,20 @@ ECRANS = [
 
 class FenetrePrincipale(QMainWindow):
     ECRANS = [nom for nom, _, _ in ECRANS]
+    ECRANS_DEFILANTS = ("Bilan", "Sauvegarde")
 
     def __init__(self, base: Base) -> None:
         super().__init__()
         self.base = base
         mettre_a_jour_etats(base)
         self.setWindowTitle("Planificateur d'études")
-        self.resize(1280, 820)
-        self.setMinimumSize(1000, 640)
+        ecran = QApplication.primaryScreen()
+        if ecran is not None:  # jamais plus grande que l'écran (portables, zoom Windows à 125-150 %)
+            place = ecran.availableGeometry()
+            self.resize(min(1280, int(place.width() * 0.94)), min(820, int(place.height() * 0.92)))
+        else:
+            self.resize(1280, 820)
+        self.setMinimumSize(940, 560)
 
         self.pages = {
             "Accueil": PageAccueil(base),
@@ -74,14 +81,27 @@ class FenetrePrincipale(QMainWindow):
             "Sauvegarde": PageDonnees(base),
         }
         self.pile = QStackedWidget()
+        self._cadres: dict[str, QWidget] = {}
         for nom in self.ECRANS:
-            self.pile.addWidget(self.pages[nom])
+            cadre = self.pages[nom]
+            if nom in self.ECRANS_DEFILANTS:  # pages « tableau de bord » : défilent au lieu d'être écrasées
+                cadre = QScrollArea()
+                cadre.setWidgetResizable(True)
+                cadre.setFrameShape(QFrame.Shape.NoFrame)
+                cadre.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                self.pages[nom].setObjectName("defile")
+                cadre.setWidget(self.pages[nom])
+            self._cadres[nom] = cadre
+            self.pile.addWidget(cadre)
 
         # Barre latérale
         barre = QFrame()
         barre.setObjectName("barreLaterale")
         barre.setFixedWidth(232)
-        colonne = QVBoxLayout(barre)
+        # Contenu défilable : sur un petit écran (portable 768 px zoomé), le menu ne force pas la hauteur
+        interieur = QWidget()
+        interieur.setObjectName("barreInterieur")
+        colonne = QVBoxLayout(interieur)
         colonne.setContentsMargins(14, 22, 14, 16)
         colonne.setSpacing(2)
         marque = QHBoxLayout()
@@ -147,6 +167,16 @@ class FenetrePrincipale(QMainWindow):
         disposition = QHBoxLayout(centre)
         disposition.setContentsMargins(0, 0, 0, 0)
         disposition.setSpacing(0)
+        defile_barre = QScrollArea()
+        defile_barre.setObjectName("barreDefile")
+        defile_barre.setWidgetResizable(True)
+        defile_barre.setFrameShape(QFrame.Shape.NoFrame)
+        defile_barre.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        defile_barre.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # molette seulement
+        defile_barre.setWidget(interieur)
+        enveloppe_barre = QVBoxLayout(barre)
+        enveloppe_barre.setContentsMargins(0, 0, 0, 0)
+        enveloppe_barre.addWidget(defile_barre)
         disposition.addWidget(barre)
         disposition.addWidget(self.pile, 1)
         self.setCentralWidget(centre)
@@ -233,4 +263,4 @@ class FenetrePrincipale(QMainWindow):
         page = self.pages[nom]
         if hasattr(page, "rafraichir") and nom in ("Accueil", "Planning", "Bilan", "Sauvegarde", "Assistant"):
             page.rafraichir()
-        self.pile.setCurrentWidget(page)
+        self.pile.setCurrentWidget(self._cadres[nom])

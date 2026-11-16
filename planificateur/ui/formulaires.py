@@ -120,7 +120,10 @@ class FormulaireMatiere(Formulaire):
     def __init__(self, matiere: m.Matiere | None = None, parent=None) -> None:
         super().__init__("Matière", parent)
         nouvelle = matiere is None
-        matiere = matiere or m.Matiere("?")
+        if matiere is None:
+            base = getattr(parent, "base", None)
+            couleurs = [x.couleur for x in base.matieres.lister()] if base is not None else []
+            matiere = m.Matiere("?", couleur=m.couleur_libre(couleurs))
         self._id = matiere.id
         self.nom = QLineEdit("" if nouvelle else matiere.nom)
         self.nom.setPlaceholderText("ex. Mathématiques")

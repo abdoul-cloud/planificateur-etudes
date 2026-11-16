@@ -332,3 +332,17 @@ class Preferences:
             max_minutes=self.max_minutes_jour,
             pauses=list(self.pauses_quotidiennes),
         )
+
+
+# Palette des matières : couleurs bien distinctes et lisibles sur fond clair
+COULEURS_MATIERES = ["#4F5BD5", "#E07A2E", "#16A34A", "#C026D3", "#0EA5E9", "#DC2626", "#CA8A04", "#0D9488",
+                     "#7C3AED", "#DB2777", "#65A30D", "#2563EB"]
+
+
+def couleur_libre(utilisees) -> str:
+    """Première couleur de la palette pas encore prise (sinon, on recommence la palette)."""
+    prises = [c.upper() for c in utilisees]
+    for couleur in COULEURS_MATIERES:
+        if couleur.upper() not in prises:
+            return couleur
+    return COULEURS_MATIERES[len(prises) % len(COULEURS_MATIERES)]

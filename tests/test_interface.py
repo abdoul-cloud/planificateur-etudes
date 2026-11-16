@@ -188,7 +188,7 @@ def test_fenetre_et_pages_affichent_les_donnees(application, base, maths):
     fenetre = FenetrePrincipale(base)
     for nom in FenetrePrincipale.ECRANS:
         fenetre.afficher(nom)
-        assert fenetre.pile.currentWidget() is fenetre.pages[nom]
+        assert fenetre.pile.currentWidget() is fenetre._cadres[nom]
     assert fenetre.pages["Matières"].table.item(0, 0).text() == "Maths"
     assert fenetre.pages["Emploi du temps"].liste.table.item(0, 2).text() == "Chaque lundi"
     assert fenetre.pages["Épreuves"].table.item(0, 1).text() == "Maths"

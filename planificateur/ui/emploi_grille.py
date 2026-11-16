@@ -108,8 +108,7 @@ class GrilleEmploi(CalendrierSemaine):
         fond = QColor(theme.ACCENT)
         fond.setAlpha(45)
         p.fillPath(chemin, fond)
-        p.setPen(QPen(QColor(theme.ACCENT), 1.6, Qt.PenStyle.DashLine))
-        p.drawPath(chemin)
+        p.strokePath(chemin, QPen(QColor(theme.ACCENT), 1.6, Qt.PenStyle.DashLine))
         police = QFont(self.font())
         police.setBold(True)
         police.setPointSizeF(9)
@@ -324,6 +323,14 @@ class DialogueJours(QDialog):
 
 class PageEmploi(QWidget):
     donnees_modifiees = Signal()
+    LARGEUR_LARGE = 1000
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        if hasattr(self, "bouton_import"):
+            large = self.width() >= self.LARGEUR_LARGE
+            self.bouton_import.setText(" Importer une image ou un PDF…" if large else " Importer…")
+            self.titre_semaine.setText(f"Semaine du {texte_semaine(self.lundi, court=not large)}")
 
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(parent)
@@ -432,7 +439,7 @@ class PageEmploi(QWidget):
         exceptions = self.base.exceptions.lister()
         debut = datetime.combine(self.lundi, time.min)
         epreuves = [e for e in self.base.epreuves.lister() if debut <= e.debut < debut + timedelta(days=7)]
-        self.titre_semaine.setText(f"Semaine du {texte_semaine(self.lundi)}")
+        self.titre_semaine.setText(f"Semaine du {texte_semaine(self.lundi, court=self.width() < self.LARGEUR_LARGE)}")
         self.grille.definir(self.lundi, self.base.preferences(), occurrences(activites, self.lundi, dimanche, exceptions),
                             epreuves, [], self.base.matieres.lister())
         self.liste.rafraichir()

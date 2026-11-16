@@ -30,7 +30,6 @@ from .commun import champ_heure, depuis_qtime
 from .theme import bouton_role, icone, pixmap_icone
 
 PARAMETRE_FAIT = "premier_lancement_fait"
-COULEURS = ["#4F5BD5", "#E07A2E", "#16A34A", "#C026D3", "#0EA5E9", "#DC2626", "#CA8A04", "#0D9488"]
 
 
 def besoin_premier_lancement(base: Base) -> bool:
@@ -251,7 +250,7 @@ class DialoguePremierLancement(QDialog):
         existantes = {x.nom.lower() for x in self.base.matieres.lister()}
         for n, nom in enumerate(self.matieres()):
             if nom.lower() not in existantes:
-                self.base.matieres.ajouter(m.Matiere(nom, couleur=COULEURS[n % len(COULEURS)]))
+                self.base.matieres.ajouter(m.Matiere(nom, couleur=m.couleur_libre([x.couleur for x in self.base.matieres.lister()])))
         self.base.definir_parametre(PARAMETRE_FAIT, "1")
         self.choix_emploi = choix
         self.accept()

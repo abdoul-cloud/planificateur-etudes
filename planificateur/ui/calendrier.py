@@ -34,6 +34,7 @@ from .theme import bouton_role, carte, en_tete, icone, police_icones, vider
 
 MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
         "septembre", "octobre", "novembre", "décembre"]
+MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 PAS_MIN = 15
 
 
@@ -41,8 +42,14 @@ def lundi_de(jour: date) -> date:
     return jour - timedelta(days=jour.weekday())
 
 
-def texte_semaine(lundi: date) -> str:
+def texte_semaine(lundi: date, court: bool = False) -> str:
     dimanche = lundi + timedelta(days=6)
+    if court:  # fenêtre étroite : « 16 – 22 nov. 2026 »
+        def abr(n):
+            return MOIS_COURTS[n - 1]
+        if lundi.month == dimanche.month:
+            return f"{lundi.day} – {dimanche.day} {abr(dimanche.month)} {dimanche.year}"
+        return f"{lundi.day} {abr(lundi.month)} – {dimanche.day} {abr(dimanche.month)} {dimanche.year}"
     if lundi.month == dimanche.month:
         return f"{lundi.day} – {dimanche.day} {MOIS[dimanche.month - 1]} {dimanche.year}"
     return f"{lundi.day} {MOIS[lundi.month - 1]} – {dimanche.day} {MOIS[dimanche.month - 1]} {dimanche.year}"
@@ -293,8 +300,7 @@ class CalendrierSemaine(QWidget):
         chemin = QPainterPath()
         chemin.addRoundedRect(rect, 6, 6)
         p.fillPath(chemin, QColor("#FFF0F3"))
-        p.setPen(QPen(QColor(theme.DANGER), 1.6))
-        p.drawPath(chemin)
+        p.strokePath(chemin, QPen(QColor(theme.DANGER), 1.6))
         matiere = self.matieres.get(epreuve.matiere_id)
         titre = f"⚑ {LIBELLES[epreuve.type].upper()}"
         self._texte_bloc(p, rect, [
@@ -326,17 +332,13 @@ class CalendrierSemaine(QWidget):
         # Bordure : pleine pour une préparation, pointillée pour un travail, aucune pour une révision
         conflit = s.id is not None and s.id in self.conflits
         if conflit:
-            p.setPen(QPen(QColor(theme.DANGER), 2))
-            p.drawPath(chemin)
+            p.strokePath(chemin, QPen(QColor(theme.DANGER), 2))
         elif manquee:
-            p.setPen(QPen(base, 1.2, Qt.PenStyle.DotLine))
-            p.drawPath(chemin)
+            p.strokePath(chemin, QPen(base, 1.2, Qt.PenStyle.DotLine))
         elif s.type is m.TypeSeance.PREPARATION:
-            p.setPen(QPen(base, 1.4))
-            p.drawPath(chemin)
+            p.strokePath(chemin, QPen(base, 1.4))
         elif s.type is m.TypeSeance.TRAVAIL:
-            p.setPen(QPen(base, 1.4, Qt.PenStyle.DashLine))
-            p.drawPath(chemin)
+            p.strokePath(chemin, QPen(base, 1.4, Qt.PenStyle.DashLine))
         p.fillRect(QRectF(rect.left(), rect.top() + 3, 4, rect.height() - 6), base)
         type_texte = LIBELLES[s.type] if s.type is not m.TypeSeance.TRAVAIL else "Travail"
         if s.statut is m.StatutSeance.TERMINEE:
@@ -476,11 +478,9 @@ class _Legende(QWidget):
                 if style == "hachures":
                     p.fillPath(chemin, QBrush(QColor("#D5D9E3"), Qt.BrushStyle.BDiagPattern))
                 if style in ("cadre", "plein"):
-                    p.setPen(QPen(QColor(trait), 1.4))
-                    p.drawPath(chemin)
+                    p.strokePath(chemin, QPen(QColor(trait), 1.4))
                 if style == "pointille":
-                    p.setPen(QPen(QColor(trait), 1.4, Qt.PenStyle.DashLine))
-                    p.drawPath(chemin)
+                    p.strokePath(chemin, QPen(QColor(trait), 1.4, Qt.PenStyle.DashLine))
                 p.fillRect(QRectF(rect.left(), rect.top() + 2, 3, rect.height() - 4), QColor(trait))
             p.setPen(QColor(theme.TEXTE_DOUX))
             p.drawText(QPointF(x + 28, 4 + 7 + mesure.ascent() / 2 - 1), nom)
@@ -490,6 +490,12 @@ class _Legende(QWidget):
 
 class PagePlanning(QWidget):
     donnees_modifiees = Signal()
+    LARGEUR_TITRE_LONG = 1000
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        if hasattr(self, "titre_semaine"):
+            self.titre_semaine.setText(texte_semaine(self.lundi, court=self.width() < self.LARGEUR_TITRE_LONG))
 
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(parent)
@@ -611,7 +617,7 @@ class PagePlanning(QWidget):
         activites, exceptions, epreuves, seances = self._donnees_semaine()
         dimanche = self.lundi + timedelta(days=6)
         conflits = self.conflits(activites, exceptions, epreuves, seances)
-        self.titre_semaine.setText(texte_semaine(self.lundi))
+        self.titre_semaine.setText(texte_semaine(self.lundi, court=self.width() < self.LARGEUR_TITRE_LONG))
         self.calendrier.definir(
             self.lundi, self.base.preferences(), occurrences(activites, self.lundi, dimanche, exceptions),
             epreuves, seances, self.base.matieres.lister(), conflits,

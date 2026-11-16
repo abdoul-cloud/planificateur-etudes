@@ -192,7 +192,8 @@ class PageBilan(QWidget):
         self.stat_taux.definir("—" if resultat.taux is None else f"{round(100 * resultat.taux)} %",
                                "des séances passées" if resultat.taux is not None else "rien à mesurer encore")
         self.stat_manque.definir(texte_duree(resultat.manque),
-                                 f"{len(resultat.manquees)} séance{'s' if len(resultat.manquees) > 1 else ''}")
+                                 (f"{len(resultat.manquees)} séance{'s' if len(resultat.manquees) > 1 else ''}"
+                                  if resultat.manquees else "aucune séance"))
 
         matieres = {x.id: x for x in self.base.matieres.lister()}
         lignes = []

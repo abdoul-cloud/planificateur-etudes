@@ -46,7 +46,10 @@ class PageDonnees(QWidget):
 
         # Fichier de données
         fichier = self._carte("Fichier de données")
-        self.chemin = QLabel(str(base.chemin))
+        # Coupure possible après chaque « \ » : un long chemin passe à la ligne au lieu d'élargir la page
+        self.chemin = QLabel(str(base.chemin).replace(chr(92), chr(92) + chr(0x200B)))
+        self.chemin.setWordWrap(True)
+        self.chemin.setToolTip(str(base.chemin))
         self.chemin.setObjectName("doux")
         self.chemin.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         bouton_dossier = QPushButton(icone("dossier"), " Ouvrir le dossier")

@@ -6,6 +6,8 @@ from datetime import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QBoxLayout,
     QComboBox,
     QLineEdit,
     QCheckBox,
@@ -174,13 +176,10 @@ class PagePreferences(QWidget):
         self.pauses = EditeurPlages()
         journee = QGroupBox("Journée type et sommeil")
         f = QFormLayout(journee)
-        horaires = QHBoxLayout()
-        for w in (QLabel("lever"), self.debut_journee, QLabel("coucher"), self.fin_journee):
-            horaires.addWidget(w)
-        horaires.addStretch()
-        f.addRow("Éveillé", horaires)
+        f.addRow("Lever", self.debut_journee)
+        f.addRow("Coucher", self.fin_journee)
         f.addRow("Au plus, par jour", self.max_jour)
-        f.addRow("Pauses de chaque jour", self.pauses)
+        f.addRow("Pauses", self.pauses)
 
         # Jours particuliers
         self.table_jours = tableau(["Jour", "Particulier", "Travail", "Lever", "Coucher", "Limite", "Pauses"])
@@ -208,22 +207,18 @@ class PagePreferences(QWidget):
         moments = QGroupBox("Moments de travail : garantis, préférés, à éviter")
         disposition_moments = QVBoxLayout(moments)
         disposition_moments.setSpacing(14)
-        ligne_libres = QHBoxLayout()
-        for w in (QLabel("Autres moments libres : séances de"), self.minutes_libres,
-                  QLabel("espacées d'au moins"), self.espace_libres):
-            ligne_libres.addWidget(w)
-        ligne_libres.addStretch()
-        ligne_jours = QHBoxLayout()
-        ligne_jours.addWidget(QLabel("les jours :"))
-        ligne_jours.addWidget(self.jours_libres)
-        ligne_jours.addStretch()
-        disposition_moments.addLayout(ligne_libres)
-        disposition_moments.addLayout(ligne_jours)
+        libres = QFormLayout()
+        libres.addRow("Autres moments libres : séances de", _avec_texte(self.minutes_libres, ""))
+        libres.addRow("espacées d'au moins", _avec_texte(self.espace_libres, ""))
+        libres.addRow("les jours", self.jours_libres)
+        disposition_moments.addLayout(libres)
         for libelle, editeur in (("Garantis : toujours remplis de travail (sauf activité, pause ou sommeil) — par défaut du lundi au vendredi, 20 h – 23 h", self.garanties),
                                  ("Préférés : choisis en premier", self.preferees),
                                  ("À éviter : utilisés seulement si nécessaire", self.evitees)):
             bloc = QVBoxLayout()
-            bloc.addWidget(QLabel(libelle))
+            titre_bloc = QLabel(libelle)
+            titre_bloc.setWordWrap(True)
+            bloc.addWidget(titre_bloc)
             bloc.addWidget(editeur)
             disposition_moments.addLayout(bloc, 1)
 
@@ -261,8 +256,10 @@ class PagePreferences(QWidget):
         colonne = QVBoxLayout(contenu)
         colonne.setContentsMargins(0, 0, 12, 12)
         colonne.setSpacing(4)
-        grille = QHBoxLayout()
+        # Deux colonnes si la place le permet, une seule dans une fenêtre étroite (voir resizeEvent)
+        grille = QBoxLayout(QBoxLayout.Direction.LeftToRight)
         grille.setSpacing(16)
+        self._grille = grille
         gauche, droite = QVBoxLayout(), QVBoxLayout()
         for w in (seances, echeances):
             gauche.addWidget(w)
@@ -290,7 +287,19 @@ class PagePreferences(QWidget):
         disposition.addWidget(self.confirmation)
         disposition.addWidget(defilement, 1)
 
+        # Champs numériques à taille raisonnable (au lieu de s'étirer sur toute la largeur)
+        for champ in contenu.findChildren(QAbstractSpinBox):
+            champ.setMaximumWidth(min(champ.maximumWidth(), 220))
         self.recharger()
+
+    LARGEUR_DEUX_COLONNES = 960
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        sens = (QBoxLayout.Direction.LeftToRight if self.width() >= self.LARGEUR_DEUX_COLONNES
+                else QBoxLayout.Direction.TopToBottom)
+        if self._grille.direction() != sens:
+            self._grille.setDirection(sens)
 
     def reglage_general(self) -> m.ReglageJour:
         return m.ReglageJour(

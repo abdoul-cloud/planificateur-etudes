@@ -7,11 +7,13 @@ from datetime import date, datetime, time, timedelta
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -44,8 +46,8 @@ class _Statistique(QWidget):
         super().__init__(parent)
         self.cadre = carte()
         disposition = QHBoxLayout(self.cadre)
-        disposition.setContentsMargins(18, 16, 18, 16)
-        disposition.setSpacing(14)
+        disposition.setContentsMargins(16, 16, 16, 16)
+        disposition.setSpacing(12)
         pastille = QLabel()
         pastille.setFixedSize(42, 42)
         pastille.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -59,6 +61,8 @@ class _Statistique(QWidget):
         self.valeur.setObjectName("grandChiffre")
         self.detail = QLabel("")
         self.detail.setObjectName("pale")
+        libelle.setWordWrap(True)
+        self.detail.setWordWrap(True)
         for w in (libelle, self.valeur, self.detail):
             textes.addWidget(w)
         disposition.addWidget(pastille, 0, Qt.AlignmentFlag.AlignTop)
@@ -224,10 +228,12 @@ class PageAccueil(QWidget):
         self.stat_semaine = _Statistique("planning", "Cette semaine")
         self.stat_epreuve = _Statistique("epreuves", "Prochaine épreuve")
         self.stat_travaux = _Statistique("travaux", "À rendre sous 7 jours")
-        statistiques = QHBoxLayout()
+        # 4 cartes côte à côte, ou 2 × 2 dans une fenêtre étroite (voir resizeEvent)
+        statistiques = QGridLayout()
         statistiques.setSpacing(16)
-        for s in (self.stat_jour, self.stat_semaine, self.stat_epreuve, self.stat_travaux):
-            statistiques.addWidget(s, 1)
+        self._statistiques = statistiques
+        self._colonnes_stats = 0
+        self._placer_statistiques(4)
 
         self.a_pointer = _APointer()
         self.a_pointer.pointe.connect(self._pointer_depuis_bouton)
@@ -246,6 +252,7 @@ class PageAccueil(QWidget):
         pas.setSpacing(10)
         titre_pas = QLabel("Bienvenue ! Trois étapes pour obtenir votre premier planning")
         titre_pas.setObjectName("titreCarte")
+        titre_pas.setWordWrap(True)
         pas.addWidget(titre_pas)
         for numero, (texte, ecran) in enumerate(
             [("Ajoutez vos matières", "Matières"), ("Saisissez votre emploi du temps", "Emploi du temps"),
@@ -264,7 +271,17 @@ class PageAccueil(QWidget):
             ligne.addWidget(aller)
             pas.addLayout(ligne)
 
-        disposition = QVBoxLayout(self)
+        contenu = QWidget()
+        contenu.setObjectName("defile")
+        defilement = QScrollArea()
+        defilement.setWidgetResizable(True)
+        defilement.setFrameShape(QFrame.Shape.NoFrame)
+        defilement.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        defilement.setWidget(contenu)
+        enveloppe = QVBoxLayout(self)
+        enveloppe.setContentsMargins(0, 0, 0, 0)
+        enveloppe.addWidget(defilement)
+        disposition = QVBoxLayout(contenu)
         disposition.setContentsMargins(28, 24, 28, 20)
         disposition.setSpacing(18)
         disposition.addLayout(haut)
@@ -274,6 +291,24 @@ class PageAccueil(QWidget):
         disposition.addLayout(colonnes)
         disposition.addStretch(1)
         self.rafraichir()
+
+    LARGEUR_QUATRE_STATS = 940
+
+    def _placer_statistiques(self, colonnes: int) -> None:
+        if colonnes == self._colonnes_stats:
+            return
+        self._colonnes_stats = colonnes
+        cartes = (self.stat_jour, self.stat_semaine, self.stat_epreuve, self.stat_travaux)
+        for s in cartes:
+            self._statistiques.removeWidget(s)
+        for n, s in enumerate(cartes):
+            self._statistiques.addWidget(s, n // colonnes, n % colonnes)
+        for c in range(4):
+            self._statistiques.setColumnStretch(c, 1 if c < colonnes else 0)
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        self._placer_statistiques(4 if self.width() >= self.LARGEUR_QUATRE_STATS else 2)
 
     def _pointer_depuis_bouton(self, seance: m.Seance, statut: m.StatutSeance) -> None:
         minutes = None

@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -71,6 +72,8 @@ class PageListe(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
+        # Le nom (1re colonne) prend la place libre, les autres colonnes s'ajustent à leur contenu
+        self.table.horizontalHeader().setMinimumSectionSize(72)
         self.table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.table.doubleClicked.connect(self.modifier)
         self.table.itemSelectionChanged.connect(self._actualiser_boutons)
@@ -133,12 +136,31 @@ class PageListe(QWidget):
             couleur = self.couleur(objet)
             for c, texte in enumerate(self.ligne(objet)):
                 cellule = QTableWidgetItem(texte)
+                cellule.setToolTip(texte)  # texte complet si la colonne est trop étroite
                 if c == 0 and couleur:
                     cellule.setData(Qt.ItemDataRole.DecorationRole, QColor(couleur))
                 self.table.setItem(n, c, cellule)
         self.table.setVisible(bool(self.objets))
         self.cadre_vide.setVisible(not self.objets)
         self._actualiser_boutons()
+        self._ajuster_colonnes()
+
+    def _ajuster_colonnes(self) -> None:
+        """Assez de place : le nom prend l'espace libre et les autres colonnes collent à leur contenu.
+        Sinon, toutes les colonnes se partagent la largeur (jamais de défilement horizontal)."""
+        entete_table = self.table.horizontalHeader()
+        besoins = [max(self.table.sizeHintForColumn(c), entete_table.sectionSizeHint(c)) + 16
+                   for c in range(self.table.columnCount())]
+        assez = sum(besoins) <= self.table.viewport().width()
+        for c in range(self.table.columnCount()):
+            if c == 0 or not assez:
+                entete_table.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
+            else:
+                entete_table.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        self._ajuster_colonnes()
 
     def _actualiser_boutons(self) -> None:
         choisi = self.selection() is not None
@@ -224,7 +246,7 @@ class PageMatieres(PageListe):
         return sorted(self.base.matieres.lister(ordre="nom"), key=lambda x: x.terminee)
 
     def ligne(self, x: m.Matiere):
-        etat = "Terminée — plus de révisions" if x.terminee else "En cours"
+        etat = "Terminée (plus révisée)" if x.terminee else "En cours"
         return [x.nom, x.code, f"{x.coefficient:g}", f"{x.difficulte} / 5", f"{x.maitrise} / 5", etat]
 
     def couleur(self, x: m.Matiere):

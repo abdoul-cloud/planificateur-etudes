@@ -208,8 +208,7 @@ class PageAssistant(QWidget):
         # --- En-tête ---
         entete, actions = en_tete(
             "Assistant",
-            "Posez une question ou demandez un changement en langage naturel. "
-            "Rien n'est modifié sans votre accord.",
+            "Demandez en langage naturel. Rien n'est modifié sans votre accord.",
         )
         self.etat_connexion = QLabel()
         self.etat_connexion.setObjectName("pastille")
@@ -242,9 +241,14 @@ class PageAssistant(QWidget):
         colonne.addWidget(aller, 0, Qt.AlignmentFlag.AlignLeft)
 
         # --- Accueil (avant le premier message) ---
-        self.accueil = QWidget()
-        self.accueil.setObjectName("defile")
-        accueil = QVBoxLayout(self.accueil)
+        interieur_accueil = QWidget()
+        interieur_accueil.setObjectName("defile")
+        self.accueil = QScrollArea()  # défilable : les tuiles ne sont jamais écrasées dans une petite fenêtre
+        self.accueil.setObjectName("filAssistant")
+        self.accueil.setWidgetResizable(True)
+        self.accueil.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.accueil.setWidget(interieur_accueil)
+        accueil = QVBoxLayout(interieur_accueil)
         accueil.setContentsMargins(24, 30, 24, 10)
         accueil.setSpacing(6)
         grand_avatar = QLabel()
@@ -276,7 +280,7 @@ class PageAssistant(QWidget):
         grille.setColumnStretch(0, 1)
         grille.setColumnStretch(1, 1)
         bloc_grille = QWidget()
-        bloc_grille.setFixedWidth(LARGEUR_FIL - 100)
+        bloc_grille.setMaximumWidth(LARGEUR_FIL - 100)
         bloc_grille.setLayout(grille)
         accueil.addStretch(1)
         accueil.addWidget(grand_avatar, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -284,7 +288,11 @@ class PageAssistant(QWidget):
         accueil.addWidget(bonjour)
         accueil.addWidget(presentation)
         accueil.addSpacing(18)
-        accueil.addWidget(bloc_grille, 0, Qt.AlignmentFlag.AlignHCenter)
+        ligne_grille = QHBoxLayout()
+        ligne_grille.addStretch(1)
+        ligne_grille.addWidget(bloc_grille, 100)
+        ligne_grille.addStretch(1)
+        accueil.addLayout(ligne_grille)
         accueil.addStretch(2)
 
         # --- Fil de la conversation, centré ---
@@ -406,7 +414,9 @@ class PageAssistant(QWidget):
         self.zone_active.setVisible(actif)
         self.voir_envoi.setEnabled(self.dernier_envoi is not None)
         modele = self.client.modele if self.client else cle_ia.modele(self.base)
-        self.etat_connexion.setText(f"●  Gemini connecté · {modele}" if actif else "○  Gemini désactivé")
+        self.etat_connexion.setText("●  Gemini connecté" if actif else "○  Gemini désactivé")
+        self.etat_connexion.setToolTip(f"Modèle : {modele} (modifiable dans Préférences)" if actif else
+                                       "Ajoutez votre clé dans Préférences > Assistant IA")
         self.etat_connexion.setObjectName("pastille" if actif else "pastilleDanger")
         self.etat_connexion.style().unpolish(self.etat_connexion)
         self.etat_connexion.style().polish(self.etat_connexion)

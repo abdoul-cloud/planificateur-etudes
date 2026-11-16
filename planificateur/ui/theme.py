@@ -120,6 +120,7 @@ def en_tete(titre: str, sous_titre: str = "") -> tuple[QWidget, QHBoxLayout]:
     textes.setSpacing(2)
     libelle = QLabel(titre)
     libelle.setObjectName("titrePage")
+    libelle.setWordWrap(True)  # fenêtre étroite : le titre passe à la ligne au lieu d'élargir la fenêtre
     textes.addWidget(libelle)
     if sous_titre:
         sous = QLabel(sous_titre)
@@ -171,6 +172,7 @@ QToolTip {{
 
 /* Barre latérale */
 QFrame#barreLaterale {{ background: {BARRE}; }}
+QScrollArea#barreDefile, QWidget#barreInterieur {{ background: {BARRE}; border: none; }}
 QLabel#logo {{ color: white; font-size: 14pt; font-weight: 600; }}
 QLabel#logoSous {{ color: #7D84A8; font-size: 9pt; }}
 QLabel#sectionNav {{ color: #5E6589; font-size: 8pt; font-weight: 600; letter-spacing: 1px; padding: 14px 14px 4px 14px; }}
