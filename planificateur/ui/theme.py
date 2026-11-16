@@ -180,7 +180,9 @@ QPushButton#nav {{
 }}
 QPushButton#nav:hover {{ background: {BARRE_SURVOL}; color: white; }}
 QPushButton#nav:checked {{ background: {ACCENT}; color: white; font-weight: 600; }}
-QLabel#piedNav {{ color: #5E6589; font-size: 8pt; }}
+QLabel#piedNav {{ color: #5E6589; font-size: 8pt; padding-left: 4px; }}
+QPushButton#lienNav {{ text-align: left; color: {BARRE_TEXTE}; border: none; padding: 6px 8px; font-size: 9pt; }}
+QPushButton#lienNav:hover {{ background: {BARRE_SURVOL}; color: white; border-radius: 8px; }}
 
 /* Titres */
 QLabel#titrePage {{ font-family: "Segoe UI Variable Display", "Segoe UI"; font-size: 20pt; font-weight: 600; }}

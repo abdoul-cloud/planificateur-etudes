@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import __version__
 from ..base import Base
 from ..suivi import mettre_a_jour_etats
 from . import theme
@@ -24,9 +27,13 @@ from .bilan import PageBilan
 from .donnees import PageDonnees
 from .calendrier import PagePlanning, generer  # noqa: F401  (generer réexporté)
 from .emploi_grille import PageEmploi
+from .notifications import Notificateur
 from .pages import PageEpreuves, PageMatieres, PageTravaux
 from .preferences import PagePreferences
-from .theme import icone
+from .theme import bouton_role, icone
+
+URL_PROJET = "https://github.com/abdoul-cloud/planificateur-etudes"
+URL_PROBLEME = URL_PROJET + "/issues/new/choose"
 
 # (nom, icône, section)
 ECRANS = [
@@ -81,8 +88,15 @@ class FenetrePrincipale(QMainWindow):
         pastille = QLabel()
         pastille.setFixedSize(36, 36)
         pastille.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pastille.setStyleSheet(f"background: {theme.ACCENT}; border-radius: 10px;")
-        pastille.setPixmap(theme.pixmap_icone("epreuves", "#FFFFFF", 20))
+        from .theme import IMAGES
+
+        icone_appli = QPixmap(f"{IMAGES}/icone.png")
+        if icone_appli.isNull():
+            pastille.setStyleSheet(f"background: {theme.ACCENT}; border-radius: 10px;")
+            pastille.setPixmap(theme.pixmap_icone("epreuves", "#FFFFFF", 20))
+        else:
+            pastille.setPixmap(icone_appli.scaled(36, 36, Qt.AspectRatioMode.KeepAspectRatio,
+                                                  Qt.TransformationMode.SmoothTransformation))
         noms = QVBoxLayout()
         noms.setSpacing(0)
         logo = QLabel("Planificateur")
@@ -117,7 +131,13 @@ class FenetrePrincipale(QMainWindow):
             colonne.addWidget(bouton)
             self.boutons[nom] = bouton
         colonne.addStretch()
-        pied = QLabel("Hors ligne · données sur cet ordinateur")
+        signaler = bouton_role(QPushButton(icone("alerte", theme.BARRE_TEXTE), "  Signaler un problème"), "discret")
+        signaler.setObjectName("lienNav")
+        signaler.setCursor(Qt.CursorShape.PointingHandCursor)
+        signaler.setToolTip("Un problème ou une idée ? Ouvre la page de retours du projet sur GitHub (dans votre navigateur)")
+        signaler.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(URL_PROBLEME)))
+        colonne.addWidget(signaler)
+        pied = QLabel(f"Version {__version__} · données sur cet ordinateur")
         pied.setObjectName("piedNav")
         pied.setWordWrap(True)
         colonne.addWidget(pied)
@@ -148,6 +168,16 @@ class FenetrePrincipale(QMainWindow):
         self.pages["Assistant"].aller_a.connect(self.afficher)
         self.pages["Assistant"].donnees_modifiees.connect(planning.signaler_changement)
         self.pages["Préférences"].section_ia.reglages_changes.connect(self.pages["Assistant"].rafraichir)
+
+        # Rappels : icône près de l'horloge et notifications
+        self.notificateur = Notificateur(base, self)
+        self.notificateur.ouvrir.connect(self.montrer)
+        self.notificateur.quitter.connect(self.quitter)
+        section_rappels = self.pages["Préférences"].section_rappels
+        section_rappels.notificateur = self.notificateur
+        section_rappels.rafraichir()
+        self._quitter_vraiment = False
+        self._prevenu_arriere_plan = False
         self.afficher("Accueil")
 
     def _replanifier_depuis_accueil(self) -> None:
@@ -161,6 +191,37 @@ class FenetrePrincipale(QMainWindow):
         self.pages["Préférences"].recharger()
         self.pages["Planning"].dernier_resultat = None
         self.rafraichir_tout()
+
+    # --- Fenêtre, icône près de l'horloge -------------------------------------------
+
+    def montrer(self, ecran: str = "") -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if ecran:
+            self.afficher(ecran)
+
+    def quitter(self) -> None:
+        self._quitter_vraiment = True
+        self.notificateur.cacher()
+        self.close()
+        QApplication.quit()
+
+    def closeEvent(self, evenement) -> None:
+        if not self._quitter_vraiment and self.notificateur.garder_en_arriere_plan():
+            evenement.ignore()
+            self.hide()
+            if not self._prevenu_arriere_plan:
+                self._prevenu_arriere_plan = True
+                from ..rappels import Rappel
+
+                self.notificateur.notifier(Rappel(
+                    "info-arriere-plan", "Toujours là pour vos rappels",
+                    "Le planificateur reste près de l'horloge. Clic droit sur son icône pour le quitter.", ""))
+            return
+        self.notificateur.cacher()
+        evenement.accept()
+        QApplication.quit()
 
     def rafraichir_tout(self) -> None:
         for page in self.pages.values():

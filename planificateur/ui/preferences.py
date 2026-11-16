@@ -274,6 +274,8 @@ class PagePreferences(QWidget):
         colonne.addLayout(grille)
         colonne.addWidget(jours)
         colonne.addWidget(moments)
+        self.section_rappels = SectionRappels(base)
+        colonne.addWidget(self.section_rappels)
         self.section_ia = SectionAssistant(base)
         colonne.addWidget(self.section_ia)
         colonne.addStretch()
@@ -372,6 +374,157 @@ class PagePreferences(QWidget):
         QTimer.singleShot(2500, self.confirmation.hide)
         self.preferences_enregistrees.emit()
         return True
+
+
+class SectionRappels(QGroupBox):
+    """Rappels et notifications (enregistrés tout de suite)."""
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__("Rappels et notifications", parent)
+        self.base = base
+        self.notificateur = None  # fourni par la fenêtre principale
+        aide = QLabel(
+            "Des notifications Windows, entièrement hors ligne. Pour les recevoir, l'application doit rester "
+            "ouverte : en fermant la fenêtre, elle reste discrètement près de l'horloge (clic droit sur son icône "
+            "pour la quitter)."
+        )
+        aide.setWordWrap(True)
+        aide.setObjectName("doux")
+        self.actif = QCheckBox("Activer les rappels")
+        self.seance = QCheckBox("Avant chaque séance :")
+        self.seance_minutes = champ_minutes(10, 120, minimum=5, pas=5)
+        self.veille = QCheckBox("La veille d'une épreuve, à")
+        self.heure_veille = champ_heure(time(19))
+        self.travail = QCheckBox("Avant un travail à rendre :")
+        self.travail_jours = _nombre(2, 1, 14, " jour(s) avant")
+        self.heure_travail = champ_heure(time(18))
+        self.bilan = QCheckBox("Point du soir (séances à pointer), à")
+        self.heure_bilan = champ_heure(time(22, 30))
+        self.arriere_plan = QCheckBox("Garder l'application près de l'horloge quand je ferme la fenêtre")
+        self.demarrage = QCheckBox("Démarrer avec Windows (discrètement, pour ne manquer aucun rappel)")
+        tester = QPushButton("Tester une notification")
+        tester.clicked.connect(self.tester)
+        self.message = QLabel()
+        self.message.setObjectName("doux")
+        self.message.setWordWrap(True)
+
+        colonne = QVBoxLayout(self)
+        colonne.addWidget(aide)
+        colonne.addWidget(self.actif)
+        f = QFormLayout()
+        f.addRow(_avec_texte(self.seance, ""), _avec_texte(self.seance_minutes, ""))
+        f.addRow(_avec_texte(self.veille, ""), _avec_texte(self.heure_veille, ""))
+        ligne_travail = QHBoxLayout()
+        ligne_travail.addWidget(self.travail_jours)
+        ligne_travail.addWidget(QLabel("à"))
+        ligne_travail.addWidget(self.heure_travail)
+        ligne_travail.addStretch()
+        f.addRow(_avec_texte(self.travail, ""), ligne_travail)
+        f.addRow(_avec_texte(self.bilan, ""), _avec_texte(self.heure_bilan, ""))
+        colonne.addLayout(f)
+        colonne.addWidget(self.arriere_plan)
+        colonne.addWidget(self.demarrage)
+        ligne_test = QHBoxLayout()
+        ligne_test.addWidget(tester)
+        ligne_test.addWidget(self.message, 1)
+        colonne.addLayout(ligne_test)
+
+        self._chargement = False
+        for case in (self.actif, self.seance, self.veille, self.travail, self.bilan, self.arriere_plan):
+            case.toggled.connect(self.enregistrer)
+        for champ in (self.seance_minutes, self.travail_jours):
+            champ.valueChanged.connect(self.enregistrer)
+        for champ in (self.heure_veille, self.heure_travail, self.heure_bilan):
+            champ.timeChanged.connect(self.enregistrer)
+        self.demarrage.toggled.connect(self._basculer_demarrage)
+        self.rafraichir()
+
+    def rafraichir(self) -> None:
+        from ..rappels import charger
+        from ..systeme import commande_demarrage, demarrage_actif
+
+        self._chargement = True
+        r = charger(self.base)
+        self.actif.setChecked(r.actif)
+        self.seance.setChecked(r.seance_minutes > 0)
+        self.seance_minutes.setValue(r.seance_minutes or 10)
+        self.veille.setChecked(r.veille_epreuve)
+        self.heure_veille.setTime(vers_qtime(r.heure_veille))
+        self.travail.setChecked(r.travail_jours > 0)
+        self.travail_jours.setValue(r.travail_jours or 2)
+        self.heure_travail.setTime(vers_qtime(r.heure_travail))
+        self.bilan.setChecked(r.bilan_soir)
+        self.heure_bilan.setTime(vers_qtime(r.heure_bilan))
+        self.arriere_plan.setChecked(r.arriere_plan)
+        self.demarrage.blockSignals(True)
+        self.demarrage.setChecked(demarrage_actif())
+        self.demarrage.blockSignals(False)
+        possible = commande_demarrage() is not None
+        self.demarrage.setEnabled(possible)
+        self.demarrage.setToolTip("" if possible else "Disponible dans l'application installée")
+        if self.notificateur is not None and not self.notificateur.disponible:
+            self.message.setText("⚠ Les notifications Windows ne sont pas disponibles sur cet ordinateur.")
+        self._actualiser()
+        self._chargement = False
+
+    def _actualiser(self) -> None:
+        actif = self.actif.isChecked()
+        for w in (self.seance, self.veille, self.travail, self.bilan, self.arriere_plan):
+            w.setEnabled(actif)
+        self.seance_minutes.setEnabled(actif and self.seance.isChecked())
+        self.heure_veille.setEnabled(actif and self.veille.isChecked())
+        self.travail_jours.setEnabled(actif and self.travail.isChecked())
+        self.heure_travail.setEnabled(actif and self.travail.isChecked())
+        self.heure_bilan.setEnabled(actif and self.bilan.isChecked())
+
+    def lire(self):
+        from ..rappels import ReglagesRappels
+
+        return ReglagesRappels(
+            actif=self.actif.isChecked(),
+            seance_minutes=self.seance_minutes.value() if self.seance.isChecked() else 0,
+            veille_epreuve=self.veille.isChecked(),
+            heure_veille=depuis_qtime(self.heure_veille.time()),
+            travail_jours=self.travail_jours.value() if self.travail.isChecked() else 0,
+            heure_travail=depuis_qtime(self.heure_travail.time()),
+            bilan_soir=self.bilan.isChecked(),
+            heure_bilan=depuis_qtime(self.heure_bilan.time()),
+            arriere_plan=self.arriere_plan.isChecked(),
+        )
+
+    def enregistrer(self, *_):
+        from ..rappels import enregistrer
+
+        self._actualiser()
+        if self._chargement:
+            return
+        enregistrer(self.base, self.lire())
+        self.message.setText("✓ Réglages des rappels enregistrés.")
+
+    def _basculer_demarrage(self, actif: bool) -> None:
+        from ..systeme import definir_demarrage
+
+        try:
+            obtenu = definir_demarrage(actif)
+        except (RuntimeError, OSError) as erreur:
+            self.message.setText(f"⚠ {erreur}")
+            obtenu = False
+        self.demarrage.blockSignals(True)
+        self.demarrage.setChecked(obtenu)
+        self.demarrage.blockSignals(False)
+        if obtenu:
+            self.message.setText("✓ Le planificateur démarrera avec Windows, discrètement près de l'horloge.")
+        elif not actif:
+            self.message.setText("Le planificateur ne démarrera plus avec Windows.")
+
+    def tester(self) -> None:
+        from ..rappels import Rappel
+
+        if self.notificateur is None:
+            return
+        self.notificateur.notifier(Rappel("test", "Ceci est un test", "Les rappels du planificateur fonctionnent.", ""))
+        self.message.setText("Notification envoyée : elle apparaît en bas à droite de l'écran."
+                             if self.notificateur.disponible else "⚠ Notifications Windows indisponibles.")
 
 
 class SectionAssistant(QGroupBox):

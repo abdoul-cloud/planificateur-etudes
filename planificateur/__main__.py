@@ -15,7 +15,7 @@ from .base import Base
 from .ui.fenetre import FenetrePrincipale
 from .ui.theme import IMAGES, appliquer_theme
 
-VERSION = "0.5.0"
+from . import __version__ as VERSION  # noqa: E402  (numéro unique : planificateur/__init__.py)
 
 
 def _autotest() -> int:
@@ -67,13 +67,32 @@ def main() -> int:
     appliquer_theme(application)
     if "--autotest" in sys.argv:
         return _autotest()
+    from PySide6.QtCore import QTimer
+
+    from .systeme import OPTION_ARRIERE_PLAN, InstanceUnique
+
+    instance = InstanceUnique()
+    if not instance.premiere:
+        instance.reveiller_l_autre()  # déjà ouverte (peut-être près de l'horloge) : on la montre
+        return 0
+    application.setQuitOnLastWindowClosed(False)  # la fermeture est gérée par la fenêtre (rappels)
     base = Base()
     try:
         base.sauvegarde_automatique()
     except (OSError, ValueError):
         pass  # une copie manquée ne doit jamais empêcher l'ouverture
     fenetre = FenetrePrincipale(base)
-    fenetre.show()
+    reveil = QTimer()
+    reveil.timeout.connect(lambda: instance.a_ete_reveillee() and fenetre.montrer())
+    reveil.start(500)
+    fenetre.notificateur.demarrer()
+    if OPTION_ARRIERE_PLAN in sys.argv and fenetre.notificateur.disponible:
+        pass  # démarrage avec Windows : seulement l'icône près de l'horloge
+    else:
+        fenetre.show()
+        from .ui.premier_lancement import proposer_premier_lancement
+
+        QTimer.singleShot(300, lambda: proposer_premier_lancement(fenetre))
     code = application.exec()
     base.fermer()
     return code

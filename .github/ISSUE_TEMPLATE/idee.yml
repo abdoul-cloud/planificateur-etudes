@@ -1,0 +1,16 @@
+name: Proposer une idée
+description: Une amélioration ou une nouvelle fonction
+labels: ["idée"]
+body:
+  - type: textarea
+    id: idee
+    attributes:
+      label: Votre idée
+      description: Qu'aimeriez-vous que l'application fasse ?
+    validations:
+      required: true
+  - type: textarea
+    id: pourquoi
+    attributes:
+      label: Pourquoi ce serait utile ?
+      description: Dans quelle situation cela vous aiderait-il ?
