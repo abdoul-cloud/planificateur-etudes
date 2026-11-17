@@ -206,6 +206,7 @@ class FenetrePrincipale(QMainWindow):
         section_rappels = self.pages["Préférences"].section_rappels
         section_rappels.notificateur = self.notificateur
         section_rappels.rafraichir()
+        self.pages["Préférences"].section_versions.verificateur = self.verifier_mises_a_jour
         self._quitter_vraiment = False
         self._prevenu_arriere_plan = False
         self.afficher("Accueil")
@@ -252,6 +253,54 @@ class FenetrePrincipale(QMainWindow):
         self.notificateur.cacher()
         evenement.accept()
         QApplication.quit()
+
+    # --- Nouvelles versions ------------------------------------------------------------
+
+    def verifier_mises_a_jour(self, forcer: bool = False, rapport=None) -> None:
+        """Demande à GitHub la dernière version (en arrière-plan, au plus une fois par jour sauf si `forcer`).
+
+        `rapport(version_ou_None, erreur="")` est appelé à la fin (écran Préférences).
+        """
+        from datetime import datetime
+
+        from .. import mises_a_jour
+        from .fond import en_fond
+
+        maintenant = datetime.now().replace(second=0, microsecond=0)
+        if not forcer and not mises_a_jour.a_verifier(self.base, maintenant):
+            return
+
+        def reussite(version) -> None:
+            if version is not None:
+                self.signaler_nouvelle_version(version)
+            if rapport is not None:
+                rapport(version)
+            else:
+                self.pages["Préférences"].section_versions.rafraichir()
+
+        def echec(message: str) -> None:
+            if rapport is not None:  # vérification automatique : silencieuse si pas d'Internet
+                rapport(None, message)
+
+        en_fond(lambda: mises_a_jour.verifier(self.base, maintenant, forcer=forcer, **self._transport_maj),
+                reussite, echec)
+
+    _transport_maj: dict = {}  # les tests y placent un faux transport (aucun accès réseau)
+
+    def signaler_nouvelle_version(self, version) -> None:
+        from datetime import datetime
+
+        from .. import rappels
+
+        self.pages["Accueil"].bandeau_version.montrer(version)
+        cle = f"version:{version.numero}"
+        # Notification Windows tous les 3 jours au plus (mémoire des rappels), jamais de bip
+        if self.notificateur.disponible and cle not in rappels.deja_envoyes(self.base):
+            self.notificateur.notifier(rappels.Rappel(
+                cle, f"Version {version.numero} disponible",
+                "Une nouvelle version du planificateur est disponible : ouvrez l'Accueil pour la télécharger.",
+                "Accueil"))
+            rappels.marquer_envoyes(self.base, [cle], datetime.now())
 
     def rafraichir_tout(self) -> None:
         for page in self.pages.values():

@@ -59,6 +59,7 @@ ICONES = {
     "importer": "\ue723",
     "assistant": "\ue8f2",
     "envoyer": "\ue724",
+    "telecharger": "\ue896",
 }
 
 
@@ -172,6 +173,7 @@ QToolTip {{
 
 /* Barre latérale */
 QFrame#barreLaterale {{ background: {BARRE}; }}
+QFrame#bandeauVersion {{ background: {ACCENT_PALE}; border: 1px solid #C9CEF5; border-radius: 12px; }}
 QScrollArea#barreDefile, QWidget#barreInterieur {{ background: {BARRE}; border: none; }}
 QLabel#logo {{ color: white; font-size: 14pt; font-weight: 600; }}
 QLabel#logoSous {{ color: #7D84A8; font-size: 9pt; }}

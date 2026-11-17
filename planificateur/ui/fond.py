@@ -7,6 +7,9 @@ from typing import Callable
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 
 from ..ia.gemini import ErreurGemini
+from ..mises_a_jour import ErreurMiseAJour
+
+ERREURS_EXPLIQUEES = (ErreurGemini, ErreurMiseAJour)
 
 SYNCHRONE = False  # les tests passent à True pour tout exécuter immédiatement
 _en_cours: set = set()
@@ -26,7 +29,7 @@ class _Tache(QRunnable):
     def run(self) -> None:
         try:
             resultat = self.fonction()
-        except ErreurGemini as erreur:
+        except ERREURS_EXPLIQUEES as erreur:
             self.signaux.echec.emit(str(erreur))
         except Exception as erreur:  # noqa: BLE001 — toute erreur doit revenir à l'écran
             self.signaux.echec.emit(f"Erreur inattendue : {erreur}")
@@ -39,7 +42,7 @@ def en_fond(fonction: Callable[[], object], si_ok: Callable[[object], None], si_
     if SYNCHRONE:
         try:
             resultat = fonction()
-        except ErreurGemini as erreur:
+        except ERREURS_EXPLIQUEES as erreur:
             si_erreur(str(erreur))
         except Exception as erreur:  # noqa: BLE001
             si_erreur(f"Erreur inattendue : {erreur}")

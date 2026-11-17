@@ -275,6 +275,8 @@ class PagePreferences(QWidget):
         colonne.addWidget(self.section_rappels)
         self.section_ia = SectionAssistant(base)
         colonne.addWidget(self.section_ia)
+        self.section_versions = SectionMisesAJour(base)
+        colonne.addWidget(self.section_versions)
         colonne.addStretch()
         defilement = QScrollArea()
         defilement.setWidgetResizable(True)
@@ -534,6 +536,75 @@ class SectionRappels(QGroupBox):
         self.notificateur.notifier(Rappel("test", "Ceci est un test", "Les rappels du planificateur fonctionnent.", ""))
         self.message.setText("Notification envoyée : elle apparaît en bas à droite de l'écran."
                              if self.notificateur.disponible else "⚠ Notifications Windows indisponibles.")
+
+
+class SectionMisesAJour(QGroupBox):
+    """Être prévenu des nouvelles versions (enregistré tout de suite)."""
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__("Nouvelles versions", parent)
+        self.base = base
+        self.verificateur = None  # fourni par la fenêtre principale : verificateur(forcer, rapport)
+        aide = QLabel(
+            "Une fois par jour, l'application demande à GitHub le numéro de la dernière version publiée. "
+            "Rien d'autre n'est envoyé : ni vos données, ni identifiant. La mise à jour elle-même reste "
+            "votre choix (téléchargement, puis installation par-dessus : vos données sont conservées)."
+        )
+        aide.setWordWrap(True)
+        aide.setObjectName("doux")
+        self.actif = QCheckBox("Me prévenir quand une nouvelle version est disponible")
+        self.actif.toggled.connect(self.enregistrer)
+        verifier = QPushButton("Vérifier maintenant")
+        verifier.clicked.connect(self.verifier_maintenant)
+        self.message = QLabel()
+        self.message.setObjectName("doux")
+        self.message.setWordWrap(True)
+        colonne = QVBoxLayout(self)
+        colonne.addWidget(aide)
+        colonne.addWidget(self.actif)
+        ligne = QHBoxLayout()
+        ligne.addWidget(verifier)
+        ligne.addWidget(self.message, 1)
+        colonne.addLayout(ligne)
+        self.rafraichir()
+
+    def rafraichir(self) -> None:
+        from .. import __version__
+        from ..mises_a_jour import charger
+
+        reglages = charger(self.base)
+        self.actif.blockSignals(True)
+        self.actif.setChecked(reglages.actif)
+        self.actif.blockSignals(False)
+        quand = (f" · dernière vérification le {reglages.derniere_verification:%d/%m à %H:%M}"
+                 if reglages.derniere_verification else "")
+        self.message.setText(f"Version installée : {__version__}{quand}")
+
+    def enregistrer(self, *_) -> None:
+        from ..mises_a_jour import charger, enregistrer
+
+        reglages = charger(self.base)
+        reglages.actif = self.actif.isChecked()
+        enregistrer(self.base, reglages)
+        self.message.setText("✓ Enregistré." if reglages.actif else
+                             "Plus aucune vérification automatique : l'application reste entièrement hors ligne "
+                             "(hors assistant IA).")
+
+    def verifier_maintenant(self) -> None:
+        if self.verificateur is None:
+            return
+        self.message.setText("Vérification…")
+        self.verificateur(True, self.afficher_resultat)
+
+    def afficher_resultat(self, version, erreur: str = "") -> None:
+        from .. import __version__
+
+        if erreur:
+            self.message.setText(f"⚠ {erreur}")
+        elif version is None:
+            self.message.setText(f"✓ Vous avez la dernière version ({__version__}).")
+        else:
+            self.message.setText(f"Nouvelle version {version.numero} disponible : voir l'Accueil pour la télécharger.")
 
 
 class SectionAssistant(QGroupBox):

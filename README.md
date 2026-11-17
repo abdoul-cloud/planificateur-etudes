@@ -1,6 +1,6 @@
 # Planificateur d'études
 
-Application Windows gratuite qui transforme votre emploi du temps, vos épreuves et vos travaux à rendre en un **planning de révision réaliste**, semaine après semaine. Elle fonctionne **entièrement hors ligne** : vos données restent sur votre ordinateur.
+Application Windows gratuite qui transforme votre emploi du temps, vos épreuves et vos travaux à rendre en un **planning de révision réaliste**, semaine après semaine. Elle fonctionne **hors ligne** : vos données restent sur votre ordinateur.
 
 ![Planning de la semaine](docs/captures/planning.png)
 
@@ -12,6 +12,7 @@ Application Windows gratuite qui transforme votre emploi du temps, vos épreuves
 - **Suivi** : vous pointez chaque séance (faite, en partie, manquée) ; une séance manquée est replanifiée ; un bilan montre ce qui a été réellement fait.
 - **Emploi du temps en grille** : cliquer-glisser pour ajouter un cours, glisser pour le déplacer.
 - **Rappels** : notification Windows avant chaque séance, la veille d'une épreuve, avant un travail à rendre, et un point du soir. L'application peut rester discrètement près de l'horloge et démarrer avec Windows (réglable, hors ligne).
+- **Export vers votre agenda** (Google Agenda, Outlook, téléphone) : un fichier `.ics` avec vos séances et épreuves, et un rappel avant chacune.
 - **Export PDF** du planning de la semaine, **sauvegardes** automatiques et restauration vérifiée.
 - **Assistant IA facultatif** (Gemini, avec votre propre clé gratuite) : questions en langage naturel, imprévus, et lecture d'un emploi du temps en image ou PDF. Rien n'est modifié sans votre accord.
 
@@ -27,6 +28,8 @@ Application Windows gratuite qui transforme votre emploi du temps, vos épreuves
 2. Lancez-le. Windows affichera probablement **« Windows a protégé votre ordinateur »** : l'installateur n'est pas signé par un certificat payant. Cliquez sur **« Informations complémentaires »**, puis **« Exécuter quand même »**.
 3. Suivez l'assistant d'installation (en français). L'application s'installe pour votre compte uniquement, avec un raccourci dans le menu Démarrer.
 
+**Mises à jour :** quand une nouvelle version est publiée, un bandeau l'annonce sur l'Accueil ; il suffit de la télécharger et de l'installer par-dessus. Pour cela, l'application demande une fois par jour à GitHub le numéro de la dernière version, sans rien envoyer d'autre (désactivable dans *Préférences > Nouvelles versions*).
+
 Pour désinstaller : *Paramètres > Applications > Planificateur d'études*. Vos données ne sont jamais effacées, ni par une désinstallation ni par une mise à jour (pour mettre à jour, il suffit d'installer la nouvelle version par-dessus).
 
 ## Premiers pas
@@ -36,7 +39,7 @@ Au premier lancement, un court assistant de bienvenue (3 étapes) règle vos hor
 1. **Matières** : ajoutez vos matières, avec leur coefficient, la difficulté ressentie et votre maîtrise.
 2. **Emploi du temps** : cliquez-glissez sur la grille pour ajouter vos cours (ou importez une image / un PDF avec l'assistant IA).
 3. **Épreuves** et **Travaux à rendre** : ajoutez ce qui arrive.
-4. **Planning** : cliquez sur **Générer le planning**. Ajustez si besoin à la souris, puis pointez vos séances au fil des jours.
+4. **Planning** : cliquez sur **Générer le planning**. Ajustez si besoin à la souris, puis pointez vos séances au fil des jours. Pour les voir sur votre téléphone : *Exporter > Agenda (.ics)*, puis importez le fichier dans Google Agenda (*Paramètres > Importer et exporter*) ou ouvrez-le avec Outlook.
 5. **Préférences** : adaptez les horaires, pauses, plages et limites à votre rythme. Les valeurs par défaut (lever 7 h, coucher 23 h, soirées de travail garanties de 20 h à 23 h du lundi au vendredi) ne sont qu'un point de départ.
 
 Les données sont enregistrées dans `%APPDATA%\PlanificateurEtudes\donnees.db`, avec une copie automatique par jour (les 10 dernières sont gardées).

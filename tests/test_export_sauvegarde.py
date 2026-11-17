@@ -186,11 +186,16 @@ def test_page_sauvegarde(application, remplie, tmp_path):
 
 
 def test_aucun_acces_reseau_hors_du_module_gemini():
-    """Aucune donnée ne quitte l'ordinateur, sauf par le client Gemini, utilisé seulement avec la clé de l'utilisateur."""
+    """Aucune donnée ne quitte l'ordinateur, sauf par le client Gemini (avec la clé de l'utilisateur)
+    et la question « dernière version ? » posée à GitHub (désactivable, sans aucune donnée)."""
     interdits = re.compile(r"^\s*(import|from)\s+(socket|urllib|http|requests|ftplib|smtplib|ssl|PySide6\.QtNetwork)\b", re.M)
     autorise = Path(__file__).parents[1] / "planificateur" / "ia" / "gemini.py"
+    mises_a_jour = Path(__file__).parents[1] / "planificateur" / "mises_a_jour.py"
+    texte_maj = mises_a_jour.read_text(encoding="utf-8")
+    assert set(re.findall(r"https://([\w.-]+)", texte_maj)) == {"api.github.com", "github.com"}
+    assert "data=" not in texte_maj and "POST" not in texte_maj  # une simple lecture : rien n'est envoyé
     for fichier in (Path(__file__).parents[1] / "planificateur").rglob("*.py"):
-        if fichier == autorise:
+        if fichier in (autorise, mises_a_jour):
             continue
         assert not interdits.search(fichier.read_text(encoding="utf-8")), fichier.name
     assert "generativelanguage.googleapis.com" in autorise.read_text(encoding="utf-8")  # une seule destination

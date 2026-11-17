@@ -524,6 +524,8 @@ class PagePlanning(QWidget):
         menu_export = QMenu(exporter)
         menu_export.addAction("PDF A4 à imprimer…", self.choisir_export_pdf)
         menu_export.addAction("Image PNG…", self.choisir_export_png)
+        menu_export.addSeparator()
+        menu_export.addAction("Agenda (.ics) : Google Agenda, Outlook, téléphone…", self.choisir_export_ics)
         exporter.setMenu(menu_export)
         for w in (precedent, aujourd_hui, suivant):
             actions.addWidget(w)
@@ -773,6 +775,28 @@ class PagePlanning(QWidget):
         chemin = self._chemin_export("png", "Image PNG (*.png)")
         if chemin:
             self.exporter(chemin)
+
+    def choisir_export_ics(self) -> None:
+        documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        propose = str(Path(documents) / "Planning-revisions.ics")
+        chemin, _ = QFileDialog.getSaveFileName(self, "Exporter vers un agenda", propose, "Agenda iCalendar (*.ics)")
+        if chemin:
+            self.exporter_agenda(Path(chemin).with_suffix(".ics"))
+
+    def exporter_agenda(self, chemin: Path) -> int | None:
+        """Séances et épreuves d'aujourd'hui jusqu'à la fin de l'horizon de planification."""
+        from ..export_ics import exporter_ics
+
+        du = date.today()
+        au = du + timedelta(weeks=self.base.preferences().horizon_semaines)
+        try:
+            nombre = exporter_ics(self.base, du, au, chemin)
+        except OSError as erreur:
+            self.avertir(self, "Export impossible", str(erreur))
+            return None
+        self.informer(f"{nombre} événement{'s' if nombre > 1 else ''} exporté{'s' if nombre > 1 else ''} "
+                      f"dans {chemin.name} : importez ce fichier dans votre agenda.")
+        return nombre
 
     def exporter(self, chemin: Path, ouvrir: bool = True) -> Path | None:
         from .export import exporter_pdf, exporter_png

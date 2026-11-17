@@ -86,6 +86,11 @@ def main() -> int:
     reveil.timeout.connect(lambda: instance.a_ete_reveillee() and fenetre.montrer())
     reveil.start(500)
     fenetre.notificateur.demarrer()
+    # Nouvelle version ? (si activé) : peu après l'ouverture, puis toutes les heures (au plus une fois par jour)
+    QTimer.singleShot(15_000, fenetre.verifier_mises_a_jour)
+    verification = QTimer()
+    verification.timeout.connect(fenetre.verifier_mises_a_jour)
+    verification.start(3_600_000)
     if OPTION_ARRIERE_PLAN in sys.argv and fenetre.notificateur.disponible:
         pass  # démarrage avec Windows : seulement l'icône près de l'horloge
     else:

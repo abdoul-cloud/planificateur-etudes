@@ -200,6 +200,62 @@ class _APointer(QWidget):
             self.contenu.addWidget(reste)
 
 
+class _BandeauVersion(QFrame):
+    """« Version x.y.z disponible » : télécharger, ou ne plus la proposer."""
+
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__(parent)
+        self.base = base
+        self.version = None
+        self.setObjectName("bandeauVersion")
+        ligne = QHBoxLayout(self)
+        ligne.setContentsMargins(18, 12, 12, 12)
+        ligne.setSpacing(12)
+        pictogramme = QLabel()
+        pictogramme.setPixmap(pixmap_icone("restaurer", theme.ACCENT, 20))
+        self.texte = QLabel()
+        self.texte.setWordWrap(True)
+        self.texte.setTextFormat(Qt.TextFormat.RichText)
+        telecharger = bouton_role(QPushButton(icone("telecharger", "#FFFFFF"), " Télécharger"), "primaire")
+        telecharger.setToolTip("Ouvre le téléchargement dans votre navigateur ; lancez ensuite le fichier : "
+                               "vos données sont conservées.")
+        telecharger.clicked.connect(self.telecharger)
+        plus_tard = bouton_role(QPushButton("Plus tard"), "discret")
+        plus_tard.setToolTip("Masquer jusqu'au prochain démarrage")
+        plus_tard.clicked.connect(self.hide)
+        ignorer = bouton_role(QPushButton("Ignorer cette version"), "discret")
+        ignorer.clicked.connect(self.ignorer)
+        ligne.addWidget(pictogramme)
+        ligne.addWidget(self.texte, 1)
+        for b in (ignorer, plus_tard, telecharger):
+            ligne.addWidget(b)
+        self.hide()
+
+    def montrer(self, version) -> None:
+        from .. import __version__
+
+        self.version = version
+        self.texte.setText(f"<b>Nouvelle version {version.numero} disponible</b> "
+                           f"<span style='color:{theme.TEXTE_DOUX}'>(vous avez la {__version__}). "
+                           f"<a href='{version.page}'>Voir les nouveautés</a></span>")
+        self.texte.setOpenExternalLinks(True)
+        self.show()
+
+    def telecharger(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        if self.version is not None:
+            QDesktopServices.openUrl(QUrl(self.version.telechargement))
+
+    def ignorer(self) -> None:
+        from ..mises_a_jour import ignorer
+
+        if self.version is not None:
+            ignorer(self.base, self.version.numero)
+        self.hide()
+
+
 class PageAccueil(QWidget):
     aller_a = Signal(str)
     donnees_modifiees = Signal()
@@ -223,6 +279,7 @@ class PageAccueil(QWidget):
         textes.addWidget(self.date_du_jour)
         haut.addLayout(textes, 1)
         haut.addWidget(bouton_planning, 0, Qt.AlignmentFlag.AlignTop)
+        self.bandeau_version = _BandeauVersion(base)
 
         self.stat_jour = _Statistique("horloge", "Aujourd'hui")
         self.stat_semaine = _Statistique("planning", "Cette semaine")
@@ -285,6 +342,7 @@ class PageAccueil(QWidget):
         disposition.setContentsMargins(28, 24, 28, 20)
         disposition.setSpacing(18)
         disposition.addLayout(haut)
+        disposition.addWidget(self.bandeau_version)
         disposition.addWidget(self.premiers_pas)
         disposition.addLayout(statistiques)
         disposition.addWidget(self.a_pointer)
