@@ -196,6 +196,16 @@ class FenetrePrincipale(QMainWindow):
         self.pages["Accueil"].replanifier.connect(self._replanifier_depuis_accueil)
         self.pages["Sauvegarde"].donnees_restaurees.connect(self._apres_restauration)
         self.pages["Assistant"].aller_a.connect(self.afficher)
+        self.pages["Bilan"].aller_a.connect(self.afficher)
+        self.pages["Bilan"].reglages_modifies.connect(planning.signaler_changement)
+        self.pages["Bilan"].reglages_modifies.connect(self.pages["Préférences"].recharger)
+        # Épreuves : importer un calendrier d'examens (lu par l'assistant)
+        page_epreuves = self.pages["Épreuves"]
+        importer = QPushButton(icone("importer"), " Importer…")
+        importer.setToolTip("Calendrier d'examens en image ou PDF : l'assistant le lit, vous vérifiez avant l'ajout")
+        importer.clicked.connect(self.importer_epreuves)
+        page_epreuves.actions.insertWidget(0, importer)
+        page_epreuves.bouton_importer = importer
         self.pages["Assistant"].donnees_modifiees.connect(planning.signaler_changement)
         self.pages["Préférences"].section_ia.reglages_changes.connect(self.pages["Assistant"].rafraichir)
 
@@ -253,6 +263,12 @@ class FenetrePrincipale(QMainWindow):
         self.notificateur.cacher()
         evenement.accept()
         QApplication.quit()
+
+    def importer_epreuves(self) -> None:
+        assistant = self.pages["Assistant"]
+        self.afficher("Assistant")
+        if assistant.actif():
+            assistant.choisir_document("epreuves")
 
     # --- Nouvelles versions ------------------------------------------------------------
 

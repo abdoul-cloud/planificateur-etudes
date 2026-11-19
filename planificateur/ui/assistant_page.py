@@ -48,7 +48,7 @@ TUILES = [
     ("alerte", "Qu'est-ce qui est urgent ?", "Les échéances qui approchent", "Qu'est-ce qui est urgent ?"),
     ("annuler", "Pas de travail ce soir", "Je replanifie la soirée", "Je ne peux pas travailler ce soir"),
     ("epreuves", "Prêt pour ma prochaine épreuve ?", "Où en est la préparation", "Suis-je prêt pour ma prochaine épreuve ?"),
-    ("drapeau", "Ajouter une épreuve", "Dites-moi la matière, le jour et l'heure", ""),
+    ("drapeau", "Charger mes épreuves", "Calendrier d'examens en image ou PDF", "@epreuves"),
 ]
 
 ICONES_ACTIONS = {
@@ -73,10 +73,17 @@ class _Bulle(QFrame):
         disposition = QVBoxLayout(self)
         disposition.setContentsMargins(16, 11, 16, 8)
         disposition.setSpacing(4)
-        libelle = QLabel(texte)
+        if de_moi:  # ce que l'utilisateur a tapé reste tel quel
+            libelle = QLabel(texte)
+            libelle.setTextFormat(Qt.TextFormat.PlainText)
+        else:  # réponse de Gemini : gras, listes… (texte échappé, aucune balise interprétée)
+            from ..ia.mise_en_forme import markdown_vers_html
+
+            libelle = QLabel(markdown_vers_html(texte))
+            libelle.setTextFormat(Qt.TextFormat.RichText)
+        self.libelle = libelle
         libelle.setWordWrap(True)
         libelle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        libelle.setTextFormat(Qt.TextFormat.PlainText)
         heure = QLabel(datetime.now().strftime("%H:%M"))
         heure.setObjectName("heureBulle")
         heure.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -194,6 +201,7 @@ class PageAssistant(QWidget):
         self.derniere_reponse: dict | None = None
         self.cartes: list[_CarteAction] = []
         self.document: Path | None = None
+        self.genre_document = "emploi"  # « emploi » (emploi du temps) ou « epreuves » (calendrier d'examens)
         self._ligne_attente: QWidget | None = None
         self._texte_attente = ""
         self._points = 0
@@ -271,7 +279,9 @@ class PageAssistant(QWidget):
         for n, (icone_nom, titre_tuile, detail, message) in enumerate(TUILES):
             tuile = _Tuile(icone_nom, titre_tuile, detail)
             if message is None:
-                tuile.clique.connect(self.choisir_document)
+                tuile.clique.connect(lambda: self.choisir_document("emploi"))
+            elif message == "@epreuves":
+                tuile.clique.connect(lambda: self.choisir_document("epreuves"))
             elif message == "":
                 tuile.clique.connect(lambda: self._preparer_saisie("J'ai une épreuve de … le … de … h à … h"))
             else:
@@ -350,7 +360,18 @@ class PageAssistant(QWidget):
         retirer = bouton_role(QPushButton("✕"), "discret")
         retirer.setToolTip("Retirer le document")
         retirer.clicked.connect(self.retirer_document)
+        self.genre_emploi = QPushButton("Emploi du temps")
+        self.genre_epreuves = QPushButton("Calendrier d'épreuves")
+        for bouton, genre in ((self.genre_emploi, "emploi"), (self.genre_epreuves, "epreuves")):
+            bouton.setObjectName("segment")
+            bouton.setCheckable(True)
+            bouton.setAutoExclusive(True)
+            bouton.clicked.connect(lambda _=False, g=genre: self._choisir_genre(g))
+        self.genre_emploi.setChecked(True)
         ligne_piece.addWidget(self.nom_piece)
+        ligne_piece.addWidget(QLabel("à lire comme :"))
+        ligne_piece.addWidget(self.genre_emploi)
+        ligne_piece.addWidget(self.genre_epreuves)
         ligne_piece.addWidget(retirer)
         ligne_piece.addStretch()
         self.piece_jointe.hide()
@@ -361,8 +382,8 @@ class PageAssistant(QWidget):
         self.saisie.setFixedHeight(64)
         QShortcut(QKeySequence("Ctrl+Return"), self.saisie, activated=lambda: self.envoyer(self.saisie.toPlainText()))
         self.bouton_joindre = bouton_role(QPushButton(icone("importer"), " Joindre"), "discret")
-        self.bouton_joindre.setToolTip("Joindre une image ou un PDF de votre emploi du temps")
-        self.bouton_joindre.clicked.connect(self.choisir_document)
+        self.bouton_joindre.setToolTip("Joindre une image ou un PDF : emploi du temps ou calendrier d'épreuves")
+        self.bouton_joindre.clicked.connect(lambda: self.choisir_document())
         astuce = QLabel("Ctrl+Entrée pour envoyer · glissez ici une image ou un PDF")
         astuce.setObjectName("pale")
         self.bouton_envoyer = bouton_role(QPushButton(icone("envoyer", "#FFFFFF"), " Envoyer"), "primaire")
@@ -398,6 +419,9 @@ class PageAssistant(QWidget):
         disposition.addWidget(entete)
         disposition.addWidget(self.inactif)
         disposition.addWidget(self.zone_active, 1)
+        disposition.addStretch(0)  # assistant non activé : la carte reste en haut au lieu de s'étirer
+        self._etirement = disposition.count() - 1
+        self._disposition = disposition
         self.rafraichir()
 
     # --- État -------------------------------------------------------------------
@@ -411,6 +435,8 @@ class PageAssistant(QWidget):
     def rafraichir(self) -> None:
         actif = self.actif()
         self.inactif.setVisible(not actif)
+        if hasattr(self, "_disposition"):
+            self._disposition.setStretch(self._etirement, 0 if actif else 1)
         self.zone_active.setVisible(actif)
         self.voir_envoi.setEnabled(self.dernier_envoi is not None)
         modele = self.client.modele if self.client else cle_ia.modele(self.base)
@@ -511,24 +537,33 @@ class PageAssistant(QWidget):
 
     # --- Document joint (emploi du temps en image ou PDF) ------------------------------
 
-    def choisir_document(self) -> None:
+    def choisir_document(self, genre: str | None = None) -> None:
         from PySide6.QtCore import QStandardPaths
         from PySide6.QtWidgets import QFileDialog
 
+        titre = "Joindre votre calendrier d'épreuves" if genre == "epreuves" else "Joindre un document"
         dossier = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
-        chemin, _ = QFileDialog.getOpenFileName(
-            self, "Joindre votre emploi du temps", dossier, "Emploi du temps (*.pdf *.png *.jpg *.jpeg *.webp)"
-        )
+        chemin, _ = QFileDialog.getOpenFileName(self, titre, dossier, "Image ou PDF (*.pdf *.png *.jpg *.jpeg *.webp)")
         if chemin:
-            self.joindre(Path(chemin))
+            self.joindre(Path(chemin), genre)
 
-    def joindre(self, chemin: Path) -> bool:
+    def _choisir_genre(self, genre: str) -> None:
+        self.genre_document = genre
+        (self.genre_epreuves if genre == "epreuves" else self.genre_emploi).setChecked(True)
+        if self.document is not None:
+            self.nom_piece.setText(f"📎  {self.document.name}")
+
+    def joindre(self, chemin: Path, genre: str | None = None) -> bool:
         chemin = Path(chemin)
         if chemin.suffix.lower() not in TYPES_FICHIERS:
             self.avertir(self, "Format non pris en charge", "Joignez un PDF ou une image (PNG, JPG, WEBP).")
             return False
         self.document = chemin
-        self.nom_piece.setText(f"📎  {chemin.name}  —  sera lu comme emploi du temps")
+        if genre is None:  # devine d'après le nom du fichier ; modifiable d'un clic
+            nom = chemin.stem.lower()
+            mots = ("exam", "epreuve", "épreuve", "compo", "partiel", "devoir", "session", "calendrier")
+            genre = "epreuves" if any(mot in nom for mot in mots) else "emploi"
+        self._choisir_genre(genre)
         self.piece_jointe.show()
         self.saisie.setPlaceholderText("Ajoutez une remarque si besoin (ex. « seulement le semestre 2 »), puis envoyez")
         self.saisie.setFocus()
@@ -554,26 +589,62 @@ class PageAssistant(QWidget):
         from datetime import date
 
         from ..ia.import_edt import extraire
+        from ..ia.import_epreuves import extraire_epreuves
 
         chemin = self.document
+        epreuves = self.genre_document == "epreuves"
         self.retirer_document()
         self._ajouter(_Bulle(f"📎 {chemin.name}" + (f"\n{remarque}" if remarque else ""), de_moi=True))
         self.historique.append(("utilisateur", f"[Document joint : {chemin.name}] {remarque}".strip()))
         client = self.client or ClientGemini(cle_ia.lire_cle(self.base), cle_ia.modele(self.base))
         matieres = self.base.matieres.lister(ordre="nom")
-        self._debut_attente("Gemini lit votre emploi du temps")
+        self._debut_attente("Gemini lit votre calendrier d'épreuves" if epreuves else "Gemini lit votre emploi du temps")
 
         def lu(propositions):
             self.dernier_envoi = client.dernier_envoi
             self._fin_attente()
-            self._verifier_import(propositions)
+            if epreuves:
+                self._verifier_import_epreuves(propositions)
+            else:
+                self._verifier_import(propositions)
 
         def echec(message):
             self.dernier_envoi = client.dernier_envoi
             self._fin_attente()
             self._ajouter(_Bulle(f"⚠ {message}", de_moi=False))
 
-        en_fond(lambda: extraire(client, chemin, matieres, date.today(), remarque), lu, echec)
+        lecture = extraire_epreuves if epreuves else extraire
+        en_fond(lambda: lecture(client, chemin, matieres, date.today(), remarque), lu, echec)
+
+    def _verifier_import_epreuves(self, propositions) -> None:
+        from .import_dialogue import DialogueImportEpreuves
+
+        nombre = len(propositions)
+        self._ajouter(_Bulle(f"J'ai reconnu **{nombre} épreuve{'s' if nombre > 1 else ''}**. Vérifiez-les dans la "
+                             "fenêtre qui s'ouvre : rien n'est ajouté sans votre accord.", de_moi=False))
+        dialogue = DialogueImportEpreuves(propositions, self.base.matieres.lister(ordre="nom"),
+                                          self.base.epreuves.lister(), self)
+        if not self.ouvrir_dialogue(dialogue):
+            self._ajouter(_Bulle("Import annulé : aucune épreuve n'a été ajoutée.", de_moi=False))
+            self.historique.append(("assistant", "[Import d'épreuves annulé par l'étudiant]"))
+            return
+        ajoutees = dialogue.resultat or dialogue.valeurs()
+        for epreuve in ajoutees:
+            self.base.epreuves.ajouter(epreuve)
+        if ajoutees:
+            premiere = min(e.debut for e in ajoutees)
+            pluriel = "s" if len(ajoutees) > 1 else ""
+            bilan = (f"C'est fait : **{len(ajoutees)} épreuve{pluriel}** ajoutée{pluriel}, la première le "
+                     f"{premiere:%d/%m}. Leur préparation sera planifiée avant chacune.")
+        else:
+            bilan = "Aucune épreuve ajoutée."
+        self._ajouter(_Bulle(bilan, de_moi=False))
+        self.historique.append(("assistant", f"[Import d'épreuves : {bilan}]"))
+        if ajoutees:
+            self.donnees_modifiees.emit()
+            carte_action = _CarteAction(self, Action("regenerer_planning", {}, "Recalculer le planning avec ces épreuves"))
+            self.cartes.append(carte_action)
+            self._ajouter(carte_action)
 
     def _verifier_import(self, propositions) -> None:
         from .import_dialogue import DialogueImport

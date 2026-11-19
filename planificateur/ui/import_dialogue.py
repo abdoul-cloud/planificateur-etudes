@@ -151,3 +151,110 @@ class DialogueImport(QDialog):
             QMessageBox.warning(self, "À corriger", str(erreur))
             return
         self.accept()
+
+
+# --- Épreuves lues dans un calendrier d'examens ------------------------------------------------
+
+COLONNES_EPREUVES = ["", "Intitulé", "Matière", "Type", "Date", "Début", "Fin"]
+TYPES_EPREUVE = [m.TypeEpreuve.INTERROGATION, m.TypeEpreuve.DEVOIR_SURVEILLE, m.TypeEpreuve.COMPOSITION,
+                 m.TypeEpreuve.EXAMEN]
+
+
+class _LigneEpreuve:
+    def __init__(self, table, rang: int, proposition, matieres: list[m.Matiere], deja: bool) -> None:
+        self.inclure = QCheckBox()
+        self.inclure.setChecked(not deja)
+        if deja:
+            self.inclure.setToolTip("Cette épreuve est déjà enregistrée : décochée pour éviter un doublon")
+        self.intitule = QLineEdit(proposition.intitule)
+        self.matiere = QComboBox()
+        self.matiere.addItem("— Choisir —", None)
+        for x in matieres:
+            self.matiere.addItem(x.nom, x.id)
+        self.matiere.setCurrentIndex(max(0, self.matiere.findData(proposition.matiere_id)))
+        if proposition.matiere_id is None:
+            self.matiere.setToolTip("Matière non reconnue : choisissez-la")
+            self.matiere.setStyleSheet("QComboBox { border: 1px solid #D97706; }")
+        self.type = QComboBox()
+        for membre in TYPES_EPREUVE:
+            self.type.addItem(LIBELLES[membre], membre)
+        self.type.setCurrentIndex(max(0, self.type.findData(proposition.type)))
+        self.date = champ_date(proposition.jour)
+        self.debut = champ_heure(proposition.debut)
+        self.fin = champ_heure(proposition.fin)
+        if proposition.heure_devinee:
+            for champ in (self.debut, self.fin):
+                champ.setToolTip("Heure absente du document : vérifiez-la")
+                champ.setStyleSheet("QTimeEdit { border: 1px solid #D97706; }")
+        centre = QWidget()
+        case = QHBoxLayout(centre)
+        case.setContentsMargins(8, 0, 0, 0)
+        case.addWidget(self.inclure)
+        self.chapitres = proposition.chapitres
+        for colonne, widget in enumerate([centre, self.intitule, self.matiere, self.type, self.date, self.debut, self.fin]):
+            table.setCellWidget(rang, colonne, widget)
+
+    def epreuve(self) -> m.Epreuve | None:
+        from datetime import datetime
+
+        if not self.inclure.isChecked():
+            return None
+        intitule = self.intitule.text().strip()
+        if self.matiere.currentData() is None:
+            raise ValueError(f"Choisissez la matière de « {intitule or 'l’épreuve'} ».")
+        jour = depuis_qdate(self.date.date())
+        debut, fin = depuis_qtime(self.debut.time()), depuis_qtime(self.fin.time())
+        if fin <= debut:
+            raise ValueError(f"« {intitule or self.matiere.currentText()} » finit avant de commencer.")
+        return m.Epreuve(self.matiere.currentData(), datetime.combine(jour, debut), datetime.combine(jour, fin),
+                         type=m.TypeEpreuve(self.type.currentData()), intitule=intitule, chapitres=self.chapitres)
+
+
+class DialogueImportEpreuves(QDialog):
+    def __init__(self, propositions, matieres: list[m.Matiere], existantes: list[m.Epreuve] = (),
+                 parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Vérifier les épreuves lues par Gemini")
+        self.resize(1240, 560)
+        matieres = [x for x in matieres if not x.terminee]
+        deja = {(e.matiere_id, e.debut.date()) for e in existantes}
+        aide = QLabel(
+            f"Gemini a reconnu {len(propositions)} épreuve{'s' if len(propositions) > 1 else ''}. "
+            "Vérifiez chaque ligne et décochez ce qu'il ne faut pas ajouter. Entouré en orange : matière non "
+            "reconnue ou heure absente du document. Les épreuves déjà enregistrées sont décochées. "
+            "Rien n'est enregistré avant « Ajouter »."
+        )
+        aide.setWordWrap(True)
+        self.table = tableau(COLONNES_EPREUVES)
+        self.table.verticalHeader().setDefaultSectionSize(46)
+        entete = self.table.horizontalHeader()
+        for colonne, largeur in ((0, 40), (2, 220), (3, 190), (4, 160), (5, 105), (6, 105)):
+            entete.setSectionResizeMode(colonne, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(colonne, largeur)
+        entete.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setRowCount(len(propositions))
+        self.lignes = [_LigneEpreuve(self.table, n, p, matieres, (p.matiere_id, p.jour) in deja)
+                       for n, p in enumerate(propositions)]
+        boutons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bouton_role(boutons.button(QDialogButtonBox.StandardButton.Ok), "primaire").setText("Ajouter les épreuves cochées")
+        boutons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annuler")
+        boutons.accepted.connect(self._valider)
+        boutons.rejected.connect(self.reject)
+        disposition = QVBoxLayout(self)
+        disposition.setContentsMargins(22, 20, 22, 18)
+        disposition.setSpacing(12)
+        disposition.addWidget(aide)
+        disposition.addWidget(self.table, 1)
+        disposition.addWidget(boutons)
+        self.resultat: list[m.Epreuve] = []
+
+    def valeurs(self) -> list[m.Epreuve]:
+        return [e for e in (ligne.epreuve() for ligne in self.lignes) if e is not None]
+
+    def _valider(self) -> None:
+        try:
+            self.resultat = self.valeurs()
+        except ValueError as erreur:
+            QMessageBox.warning(self, "À corriger", str(erreur))
+            return
+        self.accept()

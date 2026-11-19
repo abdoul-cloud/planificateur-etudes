@@ -4,9 +4,18 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath
-from PySide6.QtWidgets import QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .. import modeles as m
 from ..base import Base
@@ -15,7 +24,7 @@ from . import theme
 from .accueil import _Liste, _Statistique, _texte_jour
 from .calendrier import generer, lundi_de
 from .commun import LIBELLES, texte_duree
-from .theme import carte, en_tete
+from .theme import bouton_role, carte, en_tete
 
 PERIODES = ["Cette semaine", "Semaine dernière", "4 dernières semaines"]
 
@@ -112,7 +121,102 @@ class BarresMatieres(QWidget):
         self.update()
 
 
+COULEURS_TON = {"attention": "#D97706", "bravo": "#16A34A", "info": "#4F5BD5"}
+
+
+class CarteConseils(QFrame):
+    """Conseils tirés des séances pointées, chacun avec son bouton pour l'appliquer."""
+
+    def __init__(self, base: Base, page: "PageBilan") -> None:
+        super().__init__()
+        self.base = base
+        self.page = page
+        self.setObjectName("carte")
+        self.colonne = QVBoxLayout(self)
+        self.colonne.setContentsMargins(20, 16, 20, 16)
+        self.colonne.setSpacing(10)
+        self.lignes: list[QWidget] = []
+        self.conseils = []
+
+    def definir(self, conseils) -> None:
+        from .theme import vider
+
+        vider(self.colonne)
+        self.conseils = list(conseils)
+        titre = QLabel("Conseils")
+        titre.setObjectName("titreCarte")
+        sous = QLabel("D'après vos séances pointées des 4 dernières semaines. Rien ne change sans votre accord.")
+        sous.setObjectName("pale")
+        sous.setWordWrap(True)
+        self.colonne.addWidget(titre)
+        self.colonne.addWidget(sous)
+        self.lignes = [self._ligne(c) for c in self.conseils]
+        for ligne in self.lignes:
+            self.colonne.addWidget(ligne)
+
+    def _ligne(self, conseil) -> QWidget:
+        cadre = QFrame()
+        cadre.setObjectName("conseil")
+        cadre.setStyleSheet(f"QFrame#conseil {{ border-left: 4px solid {COULEURS_TON.get(conseil.ton, theme.ACCENT)};"
+                            " background: #F8F9FC; border-radius: 6px; }")
+        ligne = QHBoxLayout(cadre)
+        ligne.setContentsMargins(14, 10, 10, 10)
+        ligne.setSpacing(12)
+        textes = QVBoxLayout()
+        textes.setSpacing(2)
+        titre = QLabel(f"<b>{conseil.titre}</b>")
+        texte = QLabel(conseil.texte)
+        texte.setObjectName("doux")
+        texte.setWordWrap(True)
+        textes.addWidget(titre)
+        textes.addWidget(texte)
+        ligne.addLayout(textes, 1)
+        cadre.confirmation = QLabel()
+        cadre.confirmation.setObjectName("doux")
+        cadre.confirmation.setWordWrap(True)
+        cadre.confirmation.hide()
+        textes.addWidget(cadre.confirmation)
+        cadre.boutons = []
+        if conseil.appliquer is not None:
+            bouton = bouton_role(QPushButton(conseil.action), "primaire")
+            bouton.clicked.connect(lambda _=False, c=conseil, f=cadre: self.appliquer(c, f))
+            cadre.boutons.append(bouton)
+        elif conseil.ecran:
+            bouton = QPushButton("Ouvrir " + conseil.ecran)
+            bouton.clicked.connect(lambda _=False, e=conseil.ecran: self.page.aller_a.emit(e))
+            cadre.boutons.append(bouton)
+        if conseil.cle not in ("attente", "rien"):
+            masquer = bouton_role(QPushButton("Ne plus proposer"), "discret")
+            masquer.clicked.connect(lambda _=False, c=conseil, f=cadre: self.masquer(c, f))
+            cadre.boutons.append(masquer)
+        for bouton in cadre.boutons:
+            ligne.addWidget(bouton, 0, Qt.AlignmentFlag.AlignVCenter)
+        cadre.conseil = conseil
+        return cadre
+
+    def appliquer(self, conseil, cadre) -> str:
+        message = conseil.appliquer(self.base)
+        for bouton in cadre.boutons:
+            bouton.hide()
+        cadre.confirmation.setText("✓ " + message)
+        cadre.confirmation.show()
+        from ..conseils import ignorer
+
+        ignorer(self.base, conseil.cle)  # appliqué : inutile de le reproposer
+        self.page.reglages_modifies.emit()
+        return message
+
+    def masquer(self, conseil, cadre) -> None:
+        from ..conseils import ignorer
+
+        ignorer(self.base, conseil.cle)
+        cadre.hide()
+
+
 class PageBilan(QWidget):
+    aller_a = Signal(str)
+    reglages_modifies = Signal()  # un conseil a changé les préférences : proposer de recalculer
+
     def __init__(self, base: Base, parent=None) -> None:
         super().__init__(parent)
         self.base = base
@@ -168,6 +272,8 @@ class PageBilan(QWidget):
         disposition.setSpacing(18)
         disposition.addWidget(entete)
         disposition.addLayout(ligne_stats)
+        self.carte_conseils = CarteConseils(base, self)
+        disposition.addWidget(self.carte_conseils)
         disposition.addWidget(self.cadre_barres)
         disposition.addLayout(grille)
         disposition.addStretch(1)
@@ -217,3 +323,7 @@ class PageBilan(QWidget):
             manquees.append((matiere.couleur if matiere else theme.ACCENT, f"{matiere.nom if matiere else 'Séance'} · {LIBELLES[s.type]}",
                              f"{_texte_jour(s.debut.date())}, {s.debut:%H:%M} – {s.fin:%H:%M}", texte_duree(s.minutes)))
         self.liste_manquees.definir(manquees)
+
+        from ..conseils import conseils
+
+        self.carte_conseils.definir(conseils(self.base, maintenant))

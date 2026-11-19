@@ -646,10 +646,98 @@ def test_carte_en_echec(application, remplie, synchrone):
     assert page.cartes[0].objectName() == "carteActionEchec" and "chevauche" in page.cartes[0].texte.text()
 
 
-def test_tuile_ajouter_une_epreuve_prepare_la_saisie(application, remplie):
+def test_tuile_charger_mes_epreuves(application, remplie):
     from planificateur.ui.assistant_page import _Tuile
 
     faux = FauxGemini()
     page = _page_assistant(remplie, faux)
+    demandes = []
+    page.choisir_document = lambda genre=None: demandes.append(genre)  # pas de vraie fenêtre de fichier
     page.findChildren(_Tuile)[-1].clique.emit()
-    assert page.saisie.toPlainText().startswith("J'ai une épreuve") and not faux.envois
+    assert demandes == ["epreuves"] and not faux.envois
+
+
+# --- Calendrier d'épreuves lu dans un document ---------------------------------------------
+
+
+def _reponse_epreuves():
+    return texte(json.dumps({"epreuves": [
+        {"intitule": "Partiel Trait. signal", "matiere": "Traitement de signal", "type": "examen",
+         "date": "2026-12-14", "debut": "08:00", "fin": "10:00", "salle": "A12"},
+        {"intitule": "DS Réseaux", "matiere": "", "type": "devoir_surveille", "date": "2026-12-16",
+         "duree_minutes": 90},
+        {"intitule": "Anglais oral", "type": "interrogation", "date": "pas de date"},  # ignorée
+    ]}))
+
+
+def test_interpretation_des_epreuves(remplie):
+    from planificateur.ia.import_epreuves import interpreter
+
+    propositions = interpreter(json.loads(_reponse_epreuves()["steps"][0]["content"][0]["text"]),
+                               remplie.matieres.lister())
+    partiel, ds = propositions
+    assert partiel.type is m.TypeEpreuve.EXAMEN and partiel.debut == time(8) and not partiel.heure_devinee
+    assert partiel.chapitres == "Salle A12" and partiel.matiere_id is not None
+    assert ds.matiere_id == remplie.matieres.lister(ordre="nom")[0].id  # reconnue d'après « DS Réseaux »
+    assert ds.debut == time(8) and ds.fin == time(9, 30) and ds.heure_devinee  # heure absente : à vérifier
+
+
+def test_calendrier_epreuves_joint_lu_verifie_et_ajoute(application, remplie, synchrone, tmp_path):
+    pdf = tmp_path / "calendrier-examens.pdf"
+    pdf.write_bytes(b"%PDF-1.4 faux")
+    faux = FauxGemini(_reponse_epreuves())
+    page = _page_assistant(remplie, faux)
+    vus = []
+
+    def verifier(dialogue):
+        vus.append(len(dialogue.lignes))
+        dialogue.resultat = dialogue.valeurs()
+        return True
+
+    page.ouvrir_dialogue = verifier
+    assert page.joindre(pdf) and page.genre_document == "epreuves"  # deviné d'après le nom du fichier
+    page.envoyer("")
+    assert vus == [2]
+    epreuves = sorted(remplie.epreuves.lister(), key=lambda e: e.debut)
+    assert [e.debut for e in epreuves] == [datetime(2026, 12, 14, 8), datetime(2026, 12, 16, 8)]
+    assert "calendrier d'épreuves" in faux.envois[0][1]["input"][1]["text"]
+    assert page.cartes[-1].action.nom == "regenerer_planning"
+    # Relire le même document : les épreuves déjà enregistrées sont décochées (pas de doublon)
+    page.joindre(pdf)
+    page.envoyer("")
+    assert len(remplie.epreuves.lister()) == 2
+
+
+def test_genre_du_document_modifiable(application, remplie, tmp_path):
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"\x89PNG" + b"0" * 100)
+    page = _page_assistant(remplie, FauxGemini())
+    page.joindre(image)
+    assert page.genre_document == "emploi" and page.genre_emploi.isChecked()
+    page.genre_epreuves.click()
+    assert page.genre_document == "epreuves"
+
+
+# --- Mise en forme des réponses ------------------------------------------------------------
+
+
+def test_gras_listes_et_securite():
+    from planificateur.ia.mise_en_forme import markdown_vers_html as html
+
+    assert html("Voici **ta semaine**") == "<p style='margin:0 0 6px 0'>Voici <b>ta semaine</b></p>"
+    assert "<i>révision</i>" in html("2 h de *révision*")
+    rendu = html("- **Lundi** : 2 h\n- Mardi\n\n1. Maths\n2. Physique")
+    assert rendu.count("<li>") == 4 and "<ul" in rendu and "<ol" in rendu and "<b>Lundi</b>" in rendu
+    assert "<b>Conseil</b>" in html("## Conseil")
+    assert "&lt;script&gt;" in html("<script>alert(1)</script>")  # aucune balise interprétée
+    assert "<b>" not in html("`a **b** c`") and "3*4*5" in html("3*4*5") and "snake_case_nom" in html("snake_case_nom")
+
+
+def test_bulle_de_l_assistant_en_gras(application):
+    from PySide6.QtCore import Qt
+
+    from planificateur.ui.assistant_page import _Bulle
+
+    ia, moi = _Bulle("C'est **important**", de_moi=False), _Bulle("C'est **important**", de_moi=True)
+    assert "<b>important</b>" in ia.libelle.text() and ia.libelle.textFormat() is Qt.TextFormat.RichText
+    assert moi.libelle.text() == "C'est **important**"  # ce que l'on tape reste tel quel
