@@ -290,7 +290,7 @@ class _BandeauSeance(QFrame):
             self.bouton.setText(" Afficher")
         else:
             quand = ("maintenant" if seance.debut <= maintenant
-                     else f"dans {int((seance.debut - maintenant).total_seconds() // 60)} min")
+                     else f"dans {texte_duree(int((seance.debut - maintenant).total_seconds() // 60))}")
             self.texte.setText(f"<b>{nom}</b> · {seance.debut:%H:%M} – {seance.fin:%H:%M} "
                                f"<span style='color:{theme.TEXTE_DOUX}'>({quand})</span>")
             self.bouton.setText(" Commencer")

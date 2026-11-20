@@ -1,77 +1,90 @@
 # Planificateur d'études
 
-Application Windows gratuite qui transforme votre emploi du temps, vos épreuves et vos travaux à rendre en un **planning de révision réaliste**, semaine après semaine. Elle fonctionne **hors ligne** : vos données restent sur votre ordinateur.
+[![Dernière version](https://img.shields.io/github/v/release/abdoul-cloud/planificateur-etudes?label=version&color=4F5BD5)](../../releases/latest)
+![Windows 10 et 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-16A34A)](LICENSE)
+
+**Une application Windows gratuite qui transforme votre emploi du temps, vos épreuves et vos travaux à rendre en un planning de révision réaliste, semaine après semaine.**
+
+Vous saisissez vos cours, vos épreuves et vos devoirs. L'application place vos séances de révision dans vos moments libres, en respectant votre rythme. Elle s'adapte quand vous manquez une séance, et vous dit honnêtement quand tout ne tient pas. Vos données restent sur votre ordinateur.
 
 ![Planning de la semaine](docs/captures/planning.png)
 
+**[⬇ Télécharger la dernière version](../../releases/latest)** · gratuit, en français, sans compte ni publicité
+
+---
+
 ## Ce qu'elle fait
 
-- **Planning automatique** : les préparations d'épreuves et les travaux sont placés avant leur échéance, étalés sur plusieurs jours ; les cours se révisent de préférence la veille ou l'avant-veille.
-- **Respecte votre rythme** : heures de lever et de coucher, repas, pauses, jours particuliers, moments préférés ou à éviter, soirées de travail garanties (réglables).
-- **Honnête** : si tout ne tient pas, elle le dit, avec le temps manquant, au lieu de surcharger vos journées.
-- **Suivi** : vous pointez chaque séance (faite, en partie, manquée) ; une séance manquée est replanifiée ; un bilan montre ce qui a été réellement fait.
-- **Minuteur de séance** : un clic sur *Commencer* (Accueil, Planning ou icône près de l'horloge) lance un minuteur discret, propose une pause toutes les 25 min, et pointe la séance tout seul à la fin avec le temps réellement travaillé.
-- **Conseils** : d'après vos séances pointées, le Bilan repère les créneaux souvent manqués, les séances trop longues ou un rythme trop chargé, et propose le réglage à appliquer d'un clic.
-- **Emploi du temps en grille** : cliquer-glisser pour ajouter un cours, glisser pour le déplacer.
-- **Rappels** : notification Windows avant chaque séance, la veille d'une épreuve, avant un travail à rendre, et un point du soir. L'application peut rester discrètement près de l'horloge et démarrer avec Windows (réglable, hors ligne).
-- **Export vers votre agenda** (Google Agenda, Outlook, téléphone) : un fichier `.ics` avec vos séances et épreuves, et un rappel avant chacune.
-- **Export PDF** du planning de la semaine et **liste des épreuves à imprimer**.
-- **Sauvegardes** : une copie par jour sur l'ordinateur, et une copie automatique vers une clé USB ou OneDrive (chaque jour ou chaque semaine) ; restauration vérifiée.
-- **Raccourcis clavier** : Ctrl+G générer, Ctrl+N ajouter, Ctrl+←/→ changer de semaine, Ctrl+M minuteur… (F1 pour la liste).
-- **Assistant IA facultatif** (Gemini, avec votre propre clé gratuite) : questions en langage naturel, imprévus, et lecture d'un emploi du temps ou d'un calendrier d'examens en image ou PDF. Rien n'est modifié sans votre accord.
+### Organiser
+- **Planning automatique** : les préparations d'épreuves et les travaux sont placés avant leur échéance et étalés sur plusieurs jours. Les cours se révisent de préférence la veille ou l'avant-veille.
+- **Respect de votre rythme** : heures de lever et de coucher, repas, pauses, jours particuliers, moments préférés ou à éviter, soirées de travail garanties. Tout se règle.
+- **Honnêteté** : si tout ne tient pas, l'application indique le temps manquant au lieu de surcharger vos journées.
+- **Emploi du temps en grille** : cliquez-glissez pour ajouter un cours, glissez pour le déplacer.
 
-| Accueil | Emploi du temps | Assistant |
+### Suivre
+- **Minuteur de séance** : un clic sur *Commencer* lance un minuteur discret. Il propose une pause toutes les 25 minutes, puis pointe la séance tout seul avec le temps réellement travaillé.
+- **Bilan et conseils** : ce qui était prévu et ce qui a été fait, par matière. L'application repère aussi les créneaux souvent manqués ou les séances trop longues, et propose le bon réglage.
+- **Rappels** : une notification Windows avant chaque séance, la veille d'une épreuve et avant un travail à rendre.
+
+### Assistant IA (facultatif)
+- Posez vos questions en langage naturel, par exemple « Je ne peux pas travailler ce soir » ou « J'ai un DS samedi à 14 h ».
+- Demandez de l'aide pour vos cours : explication d'une notion, méthode de révision, petit quiz.
+- **Joignez une photo ou un PDF** de votre emploi du temps ou de votre calendrier d'examens : l'assistant le lit, et vous vérifiez chaque ligne avant l'ajout.
+- Vos conversations restent dans un **historique**, comme dans les applications de discussion, sur votre ordinateur.
+- **Rien n'est modifié sans votre accord.**
+
+### Partager et protéger
+- **Export vers votre agenda** (Google Agenda, Outlook, téléphone), **PDF du planning** et **liste des épreuves à imprimer**.
+- **Sauvegardes** : une copie par jour sur l'ordinateur, plus une copie automatique vers une clé USB ou OneDrive.
+- **Mises à jour annoncées** dans l'application ; vous installez la nouvelle version par-dessus et vos données sont conservées.
+- **Raccourcis clavier** et **guide intégré** (touche F1).
+
+| Accueil | Assistant | Bilan |
 |---|---|---|
-| ![Accueil](docs/captures/accueil.png) | ![Emploi du temps](docs/captures/emploi-du-temps.png) | ![Assistant](docs/captures/assistant.png) |
+| ![Accueil](docs/captures/accueil.png) | ![Assistant](docs/captures/assistant.png) | ![Bilan](docs/captures/bilan.png) |
 
-## Télécharger et installer
+## Installer
 
-**Configuration requise :** Windows 10 ou 11, 64 bits. Ni Python, ni droits administrateur, ni Internet ne sont nécessaires.
+**Il faut** Windows 10 ou 11 (64 bits). Ni Python, ni droits administrateur, ni Internet ne sont nécessaires.
 
-1. Téléchargez le fichier **`Installer-PlanificateurEtudes-x.y.z.exe`** dans la page [**Releases**](../../releases/latest).
-2. Lancez-le. Windows affichera probablement **« Windows a protégé votre ordinateur »** : l'installateur n'est pas signé par un certificat payant. Cliquez sur **« Informations complémentaires »**, puis **« Exécuter quand même »**.
-3. Suivez l'assistant d'installation (en français). L'application s'installe pour votre compte uniquement, avec un raccourci dans le menu Démarrer.
+1. Téléchargez **`Installer-PlanificateurEtudes-x.y.z.exe`** depuis la page [**Releases**](../../releases/latest).
+2. Lancez-le. Windows affichera probablement « Windows a protégé votre ordinateur », car l'installateur n'est pas signé par un certificat payant. Cliquez sur **Informations complémentaires**, puis sur **Exécuter quand même**.
+3. Suivez l'assistant d'installation, en français. L'application s'installe pour votre compte uniquement, avec un raccourci dans le menu Démarrer.
 
-**Mises à jour :** quand une nouvelle version est publiée, un bandeau l'annonce sur l'Accueil ; il suffit de la télécharger et de l'installer par-dessus. Pour cela, l'application demande une fois par jour à GitHub le numéro de la dernière version, sans rien envoyer d'autre (désactivable dans *Préférences > Nouvelles versions*).
+Au premier lancement, un accueil en 3 étapes règle vos horaires, vos matières et la saisie de l'emploi du temps. Le **guide intégré** (*Aide et guide* en bas du menu, ou F1) explique tout le reste.
 
-Pour désinstaller : *Paramètres > Applications > Planificateur d'études*. Vos données ne sont jamais effacées, ni par une désinstallation ni par une mise à jour (pour mettre à jour, il suffit d'installer la nouvelle version par-dessus).
+## Questions fréquentes
 
-## Premiers pas
+**Est-ce vraiment gratuit ?**
+Oui. Le code est libre (licence MIT), sans compte, sans publicité et sans abonnement. L'assistant IA utilise votre propre clé Gemini, gratuite à créer sur [Google AI Studio](https://aistudio.google.com/apikey).
 
-Au premier lancement, un court assistant de bienvenue (3 étapes) règle vos horaires, vos matières et la saisie de l'emploi du temps. Ensuite :
+**Où sont mes données ?**
+Elles sont uniquement sur votre ordinateur, dans `%APPDATA%\PlanificateurEtudes\donnees.db`. Internet ne sert qu'à deux choses :
+- l'assistant IA, si vous ajoutez une clé ;
+- une vérification par jour du numéro de la dernière version, désactivable dans *Préférences › Nouvelles versions*.
 
-1. **Matières** : ajoutez vos matières, avec leur coefficient, la difficulté ressentie et votre maîtrise.
-2. **Emploi du temps** : cliquez-glissez sur la grille pour ajouter vos cours (ou importez une image / un PDF avec l'assistant IA).
-3. **Épreuves** et **Travaux à rendre** : ajoutez ce qui arrive.
-4. **Planning** : cliquez sur **Générer le planning**. Ajustez si besoin à la souris, puis pointez vos séances au fil des jours. Pour les voir sur votre téléphone : *Exporter > Agenda (.ics)*, puis importez le fichier dans Google Agenda (*Paramètres > Importer et exporter*) ou ouvrez-le avec Outlook.
-5. **Préférences** : adaptez les horaires, pauses, plages et limites à votre rythme. Les valeurs par défaut (lever 7 h, coucher 23 h, soirées de travail garanties de 20 h à 23 h du lundi au vendredi) ne sont qu'un point de départ.
+Quand vous utilisez l'assistant, seuls votre message, les données utiles du planificateur et le fichier joint sont envoyés à Google. Le bouton *Voir ce qui est envoyé* montre le dernier échange.
 
-Les données sont enregistrées dans `%APPDATA%\PlanificateurEtudes\donnees.db`, avec une copie automatique par jour (les 10 dernières sont gardées).
+**Comment mettre à jour ?**
+L'application annonce les nouvelles versions sur l'Accueil. Téléchargez-la et installez-la par-dessus : vos données sont conservées. Une désinstallation ne les efface pas non plus.
 
-## Assistant IA (facultatif)
+**Et sur Mac, Linux ou téléphone ?**
+L'application est faite pour Windows. Pour voir votre planning sur votre téléphone, utilisez l'export vers votre agenda.
 
-Avec une clé Gemini gratuite (à créer sur [Google AI Studio](https://aistudio.google.com/apikey), puis à saisir dans *Préférences > Assistant IA*) :
-
-- **Assistant** : questions sur le planning, résumé de la semaine, imprévus en langage naturel (« je ne peux pas travailler ce soir », « j'ai un DS samedi à 14 h »). Chaque changement proposé s'applique seulement si vous cliquez sur *Appliquer*.
-- **Lecture d'un emploi du temps** en image ou en PDF (depuis l'Assistant ou l'écran Emploi du temps) : Gemini propose les cours, que vous vérifiez et corrigez avant tout ajout.
-
-**Confidentialité :** la clé est chiffrée pour votre compte Windows. Quand vous utilisez ces fonctions, seuls votre message, les données utiles du planificateur et le fichier joint sont envoyés à Google (`generativelanguage.googleapis.com`), avec la demande de ne pas les conserver ; le bouton *Voir ce qui est envoyé* montre le dernier échange. Les conditions de l'offre gratuite de Google s'appliquent. Sans clé, l'application reste entièrement hors ligne.
+**Un problème, une idée ?**
+Cliquez sur **Signaler un problème** en bas du menu, ou ouvrez la page [Issues](../../issues/new/choose). Un formulaire simple, en français, vous guide.
 
 ## Règles de planification
 
 - Les cours, activités fixes et épreuves ne sont jamais déplacés.
-- Les échéances les plus proches sont servies d'abord, au plus une fois par jour pour une même épreuve ou un même travail, étalées sur les jours qui précèdent.
-- Aucune séance pendant les pauses et repas, ni dans les 3 h avant une épreuve, ni après elle le même jour ; 2 h au plus le jour d'une épreuve.
-- Les plages garanties (par défaut 20 h – 23 h du lundi au vendredi) sont toujours remplies ; les autres moments libres de la semaine reçoivent des séances espacées, sans entasser, dans la limite du jour.
-- Les révisions de cours se placent de préférence la veille ou l'avant-veille du cours, réparties selon coefficient × difficulté × (6 − maîtrise) ; une matière marquée terminée n'est plus révisée.
-- Ce qui ne tient pas est signalé avec le temps manquant.
+- Les échéances les plus proches passent d'abord, au plus une séance par jour pour une même épreuve ou un même travail, étalées sur les jours qui précèdent.
+- Aucune séance pendant les pauses et les repas, ni dans les 3 h avant une épreuve, ni après elle le même jour ; 2 h au plus le jour d'une épreuve.
+- Les plages garanties (par défaut 20 h – 23 h du lundi au vendredi) sont toujours remplies. Les autres moments libres de la semaine reçoivent des séances espacées, dans la limite du jour.
+- Les révisions de cours se placent de préférence la veille ou l'avant-veille du cours. Elles sont réparties selon coefficient × difficulté × (6 − maîtrise). Une matière terminée n'est plus révisée.
 - Les séances faites, déplacées à la main ou verrouillées ne sont jamais modifiées par un recalcul.
 
 Tous ces réglages se changent dans l'écran Préférences.
-
-## Un problème, une idée ?
-
-Cliquez sur **Signaler un problème** en bas du menu de l'application, ou ouvrez directement la page [Issues](../../issues/new/choose). Un formulaire simple (en français) vous guide.
 
 ## Pour les développeurs
 
@@ -97,25 +110,26 @@ Lancer les tests :
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-Construire l'installateur (tests, application autonome PyInstaller, auto-test de l'exécutable, puis Inno Setup 6 : `winget install JRSoftware.InnoSetup`) :
+Construire l'installateur. Le script lance les tests, construit l'application autonome avec PyInstaller, fait l'auto-test de l'exécutable, puis lance Inno Setup 6 (`winget install JRSoftware.InnoSetup`) :
 
 ```bash
 powershell -ExecutionPolicy Bypass -File packaging/construire.ps1
 ```
 
-Le résultat est dans `build\installateur\`. Pour une nouvelle version, changer le numéro dans `pyproject.toml`, `planificateur/__init__.py`, `packaging/version.txt` et `packaging/installateur.iss`.
+Le résultat est dans `build\installateur\`. Pour une nouvelle version, changez le numéro dans `pyproject.toml`, `planificateur/__init__.py`, `packaging/version.txt` et `packaging/installateur.iss`.
 
 | Dossier / fichier | Rôle |
 |---|---|
 | `planificateur/modeles.py` | Données : matières, activités fixes, épreuves, travaux, séances, préférences |
 | `planificateur/base.py` | Stockage SQLite, migrations, sauvegarde et restauration vérifiées |
 | `planificateur/moteur/` | Moteur de planification, indépendant de l'interface : créneaux libres et placement |
-| `planificateur/suivi.py` | Pointage des séances, temps restant, bilan |
-| `planificateur/ia/` | Assistant IA facultatif (client Gemini, clé chiffrée, import d'emploi du temps) — seul code autorisé à accéder au réseau |
+| `planificateur/suivi.py`, `conseils.py`, `minuteur.py` | Pointage, bilan, conseils et minuteur de séance |
+| `planificateur/ia/` | Assistant IA facultatif : client Gemini, clé chiffrée, lecture de documents, mise en forme |
+| `planificateur/mises_a_jour.py` | Vérification de la dernière version. Avec `ia/gemini.py`, c'est le seul code qui accède au réseau (vérifié par un test). |
 | `planificateur/ui/` | Interface PySide6 |
 | `packaging/` | Icône, recette PyInstaller, script Inno Setup, script de construction |
 | `tests/` | Tests du moteur, des scénarios du cahier des charges, de l'IA (réponses simulées) et de l'interface |
 
 ## Licence
 
-Code sous licence [MIT](LICENSE). Composants tiers (Qt / PySide6 sous LGPL v3, Python, PyInstaller, Inno Setup) : voir [MENTIONS-LEGALES.md](MENTIONS-LEGALES.md).
+Code sous licence [MIT](LICENSE). Pour les composants tiers (Qt / PySide6 sous LGPL v3, Python, PyInstaller, Inno Setup), voir [MENTIONS-LEGALES.md](MENTIONS-LEGALES.md).

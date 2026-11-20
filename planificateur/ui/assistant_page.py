@@ -14,7 +14,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -67,9 +71,11 @@ def _avatar() -> QLabel:
 
 
 class _Bulle(QFrame):
-    def __init__(self, texte: str, de_moi: bool, parent=None) -> None:
+    def __init__(self, texte: str, de_moi: bool, parent=None, heure_texte: str = "") -> None:
         super().__init__(parent)
         self.setObjectName("bulleMoi" if de_moi else "bulleIA")
+        self.texte_brut = texte
+        self.de_moi = de_moi
         disposition = QVBoxLayout(self)
         disposition.setContentsMargins(16, 11, 16, 8)
         disposition.setSpacing(4)
@@ -84,7 +90,8 @@ class _Bulle(QFrame):
         self.libelle = libelle
         libelle.setWordWrap(True)
         libelle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        heure = QLabel(datetime.now().strftime("%H:%M"))
+        self.heure_texte = heure_texte or datetime.now().strftime("%H:%M")
+        heure = QLabel(self.heure_texte)
         heure.setObjectName("heureBulle")
         heure.setAlignment(Qt.AlignmentFlag.AlignRight)
         disposition.addWidget(libelle)
@@ -139,6 +146,10 @@ class _CarteAction(QFrame):
             enfant.style().unpolish(enfant)
             enfant.style().polish(enfant)
         self.page.historique.append(("assistant", f"[Résultat pour « {self.action.description} » : {texte}]"))
+        if getattr(self, "message", None) is not None:
+            self.message.texte = texte
+            self.message.etat = {"carteActionOk": "appliquee", "carteActionIgnoree": "ignoree"}.get(etat, "echec")
+            self.page.sauver_conversation()
 
     def appliquer(self) -> bool:
         try:
@@ -152,6 +163,129 @@ class _CarteAction(QFrame):
 
     def ignorer(self) -> None:
         self._terminer(f"Ignoré : {self.action.description}", "carteActionIgnoree", "IGNORÉ", "annuler", theme.TEXTE_PALE)
+
+
+class _CarteHistorique(QFrame):
+    """Proposition d'une conversation passée : son résultat, sans bouton (l'action n'est plus applicable)."""
+
+    ETATS = {
+        "appliquee": ("carteActionOk", "APPLIQUÉ", "coche", theme.SUCCES),
+        "ignoree": ("carteActionIgnoree", "IGNORÉ", "annuler", theme.TEXTE_PALE),
+        "echec": ("carteActionEchec", "NON APPLIQUÉ", "alerte", theme.DANGER),
+        "proposee": ("carteActionIgnoree", "NON TRAITÉE", "annuler", theme.TEXTE_PALE),
+    }
+
+    def __init__(self, message, parent=None) -> None:
+        super().__init__(parent)
+        etat, etiquette, icone_nom, couleur = self.ETATS.get(message.etat, self.ETATS["proposee"])
+        self.setObjectName(etat)
+        disposition = QHBoxLayout(self)
+        disposition.setContentsMargins(14, 10, 12, 10)
+        disposition.setSpacing(12)
+        pictogramme = QLabel()
+        pictogramme.setObjectName("pictoAction")
+        pictogramme.setFixedSize(36, 36)
+        pictogramme.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pictogramme.setPixmap(pixmap_icone(icone_nom, couleur, 18))
+        textes = QVBoxLayout()
+        textes.setSpacing(2)
+        haut = QLabel(etiquette)
+        haut.setObjectName("etiquetteAction")
+        texte = QLabel(message.texte)
+        texte.setObjectName("texteAction")
+        texte.setWordWrap(True)
+        textes.addWidget(haut)
+        textes.addWidget(texte)
+        disposition.addWidget(pictogramme, 0, Qt.AlignmentFlag.AlignTop)
+        disposition.addLayout(textes, 1)
+        self.setMaximumWidth(680)
+
+
+class _PanneauConversations(QFrame):
+    """Liste des conversations passées, la plus récente en haut (comme dans les applis de chat)."""
+
+    ouvrir = Signal(int)
+    nouvelle = Signal()
+
+    def __init__(self, page: "PageAssistant") -> None:
+        super().__init__()
+        self.page = page
+        self.setObjectName("panneauConversations")
+        self.setFixedWidth(240)
+        colonne = QVBoxLayout(self)
+        colonne.setContentsMargins(10, 12, 10, 10)
+        colonne.setSpacing(8)
+        bouton = bouton_role(QPushButton(icone("ajouter", "#FFFFFF"), " Nouvelle conversation"), "primaire")
+        bouton.clicked.connect(self.nouvelle)
+        titre = QLabel("HISTORIQUE")
+        titre.setObjectName("sectionHistorique")
+        self.liste = QListWidget()
+        self.liste.setObjectName("listeConversations")
+        self.liste.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.liste.customContextMenuRequested.connect(self._menu)
+        self.liste.itemClicked.connect(lambda item: self.ouvrir.emit(item.data(Qt.ItemDataRole.UserRole)))
+        self.vide = QLabel("Vos conversations apparaîtront ici. Elles restent sur cet ordinateur.")
+        self.vide.setObjectName("pale")
+        self.vide.setWordWrap(True)
+        effacer = bouton_role(QPushButton("Tout effacer"), "discret")
+        effacer.clicked.connect(self.tout_effacer)
+        self.bouton_effacer = effacer
+        colonne.addWidget(bouton)
+        colonne.addSpacing(4)
+        colonne.addWidget(titre)
+        colonne.addWidget(self.vide)
+        colonne.addWidget(self.liste, 1)
+        colonne.addWidget(effacer, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def rafraichir(self, actuelle: int | None) -> None:
+        from ..conversations import lister, texte_quand
+
+        resumes = lister(self.page.base)
+        maintenant = datetime.now()
+        self.liste.blockSignals(True)
+        self.liste.clear()
+        for r in resumes:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, r.id)
+            item.setToolTip(r.titre)
+            bloc = QWidget()
+            bloc.setObjectName("elementConversation")
+            textes = QVBoxLayout(bloc)
+            textes.setContentsMargins(10, 7, 8, 7)
+            textes.setSpacing(1)
+            titre = QLabel(r.titre)
+            titre.setObjectName("titreConversation")
+            quand = QLabel(texte_quand(r.modifiee, maintenant))
+            quand.setObjectName("dateConversation")
+            textes.addWidget(titre)
+            textes.addWidget(quand)
+            item.setSizeHint(bloc.sizeHint())
+            self.liste.addItem(item)
+            self.liste.setItemWidget(item, bloc)
+            if r.id == actuelle:
+                item.setSelected(True)
+                self.liste.setCurrentItem(item)
+        self.liste.blockSignals(False)
+        self.vide.setVisible(not resumes)
+        self.liste.setVisible(bool(resumes))
+        self.bouton_effacer.setVisible(bool(resumes))
+
+    def _menu(self, position) -> None:
+        item = self.liste.itemAt(position)
+        if item is None:
+            return
+        identifiant = item.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu(self)
+        renommer = menu.addAction(icone("modifier"), "Renommer…")
+        supprimer = menu.addAction(icone("supprimer", theme.DANGER), "Supprimer")
+        choix = menu.exec(self.liste.viewport().mapToGlobal(position))
+        if choix is renommer:
+            self.page.renommer_conversation(identifiant)
+        elif choix is supprimer:
+            self.page.supprimer_conversation(identifiant)
+
+    def tout_effacer(self) -> None:
+        self.page.effacer_historique()
 
 
 class _Tuile(QFrame):
@@ -196,7 +330,13 @@ class PageAssistant(QWidget):
         self.base = base
         self.client: ClientGemini | None = None  # injectable dans les tests
         self.maintenant: datetime | None = None
-        self.historique: list[tuple[str, str]] = []
+        from ..conversations import Conversation
+
+        self.discussion = Conversation()
+        self.historique: list[tuple[str, str]] = self.discussion.memoire  # mémoire transmise à Gemini
+        self._restauration = False
+        self.demander_texte = self._demander_texte  # remplaçables dans les tests
+        self.confirmer = lambda titre, texte: QMessageBox.question(self, titre, texte) == QMessageBox.StandardButton.Yes
         self.dernier_envoi: dict | None = None
         self.derniere_reponse: dict | None = None
         self.cartes: list[_CarteAction] = []
@@ -221,10 +361,18 @@ class PageAssistant(QWidget):
         self.etat_connexion = QLabel()
         self.etat_connexion.setObjectName("pastille")
         self.voir_envoi = QPushButton("Voir ce qui est envoyé")
+        self.voir_envoi.setToolTip("Voir exactement ce qui a été envoyé à Google lors du dernier message")
         self.voir_envoi.clicked.connect(self.montrer_envoi)
         nouvelle = bouton_role(QPushButton(icone("ajouter"), " Nouvelle conversation"), "discret")
+        nouvelle.setToolTip("Nouvelle conversation (la précédente reste dans l'historique)")
+        self.bouton_nouvelle = nouvelle
         nouvelle.clicked.connect(self.recommencer)
+        self.bouton_historique = bouton_role(QPushButton(icone("bilan"), " Historique"), "discret")
+        self.bouton_historique.setCheckable(True)
+        self.bouton_historique.setToolTip("Afficher ou masquer la liste des conversations")
+        self.bouton_historique.toggled.connect(lambda visible: self.panneau.setVisible(visible))
         actions.addWidget(self.etat_connexion, 0, Qt.AlignmentFlag.AlignVCenter)
+        actions.addWidget(self.bouton_historique)
         actions.addWidget(nouvelle)
         actions.addWidget(self.voir_envoi)
 
@@ -405,13 +553,22 @@ class PageAssistant(QWidget):
         disposition_composeur.addWidget(self.saisie)
         disposition_composeur.addLayout(barre_saisie)
 
-        self.zone_active = QWidget()
-        zone = QVBoxLayout(self.zone_active)
+        colonne_chat = QWidget()
+        zone = QVBoxLayout(colonne_chat)
         zone.setContentsMargins(0, 0, 0, 0)
         zone.setSpacing(10)
         zone.addWidget(self.conversation, 1)
         zone.addWidget(self.barre_suggestions)
         zone.addWidget(self.composeur)
+        self.panneau = _PanneauConversations(self)
+        self.panneau.ouvrir.connect(self.ouvrir_conversation)
+        self.panneau.nouvelle.connect(self.recommencer)
+        self.zone_active = QWidget()
+        cote_a_cote = QHBoxLayout(self.zone_active)
+        cote_a_cote.setContentsMargins(0, 0, 0, 0)
+        cote_a_cote.setSpacing(14)
+        cote_a_cote.addWidget(self.panneau)
+        cote_a_cote.addWidget(colonne_chat, 1)
 
         disposition = QVBoxLayout(self)
         disposition.setContentsMargins(28, 24, 28, 20)
@@ -422,6 +579,8 @@ class PageAssistant(QWidget):
         disposition.addStretch(0)  # assistant non activé : la carte reste en haut au lieu de s'étirer
         self._etirement = disposition.count() - 1
         self._disposition = disposition
+        self.panneau.rafraichir(None)
+        self.bouton_historique.setChecked(True)
         self.rafraichir()
 
     # --- État -------------------------------------------------------------------
@@ -452,21 +611,133 @@ class PageAssistant(QWidget):
         self.barre_suggestions.setVisible(commencee)
 
     def recommencer(self) -> None:
+        from ..conversations import Conversation
+
         self._minuteur.stop()
         self._ligne_attente = None
-        self.historique.clear()
+        self.discussion = Conversation()
+        self.historique = self.discussion.memoire
         self.cartes.clear()
         vider(self.messages)
         self.messages.addStretch()
         self.bouton_envoyer.setEnabled(True)
+        self.panneau.rafraichir(None)
         self.rafraichir()
+
+    # --- Historique des conversations ------------------------------------------------------
+
+    def ouvrir_conversation(self, identifiant: int) -> bool:
+        from ..conversations import charger
+
+        conversation = charger(self.base, identifiant)
+        if conversation is None:
+            return False
+        self.recommencer()
+        self.discussion = conversation
+        self.historique = conversation.memoire
+        self._restauration = True
+        try:
+            for message in conversation.messages:
+                if message.qui == "proposition":
+                    self._ajouter(_CarteHistorique(message))
+                else:
+                    self._ajouter(_Bulle(message.texte, message.qui == "utilisateur", heure_texte=message.heure))
+        finally:
+            self._restauration = False
+        self.panneau.rafraichir(conversation.id)
+        self.rafraichir()
+        return True
+
+    def _demander_texte(self, titre: str, question: str, valeur: str) -> str | None:
+        texte, ok = QInputDialog.getText(self, titre, question, text=valeur)
+        return texte if ok else None
+
+    def renommer_conversation(self, identifiant: int) -> None:
+        from ..conversations import charger, renommer
+
+        conversation = charger(self.base, identifiant)
+        if conversation is None:
+            return
+        titre = self.demander_texte("Renommer la conversation", "Nouveau titre :", conversation.titre)
+        if titre and titre.strip():
+            renommer(self.base, identifiant, titre)
+            if self.discussion.id == identifiant:
+                self.discussion.titre = " ".join(titre.split())[:80]
+            self.panneau.rafraichir(self.discussion.id)
+
+    def supprimer_conversation(self, identifiant: int) -> None:
+        from ..conversations import supprimer
+
+        if not self.confirmer("Supprimer la conversation", "Supprimer définitivement cette conversation ?"):
+            return
+        supprimer(self.base, identifiant)
+        if self.discussion.id == identifiant:
+            self.recommencer()
+        else:
+            self.panneau.rafraichir(self.discussion.id)
+
+    def effacer_historique(self) -> None:
+        from ..conversations import tout_supprimer
+
+        if not self.confirmer("Effacer l'historique", "Supprimer définitivement toutes les conversations ?"):
+            return
+        tout_supprimer(self.base)
+        self.recommencer()
+
+    def _ajuster_suggestions(self) -> None:
+        boutons = [self.suggestions.itemAt(i).widget() for i in range(self.suggestions.count())
+                   if self.suggestions.itemAt(i).widget() is not None]
+        place = self.barre_suggestions.width() or self.width()
+        utilise = 0
+        for bouton in boutons:
+            largeur = bouton.sizeHint().width() + self.suggestions.spacing()
+            bouton.setVisible(utilise + largeur <= place)
+            utilise += largeur if bouton.isVisibleTo(self.barre_suggestions) else 0
+
+    def resizeEvent(self, evenement) -> None:
+        super().resizeEvent(evenement)
+        QTimer.singleShot(0, self._ajuster_suggestions)
+        large = self.width() >= 1000  # fenêtre étroite : la liste se replie (bouton « Historique »)
+        if getattr(self, "_large", None) != large:
+            self._large = large
+            # Fenêtre étroite : boutons de l'en-tête en icônes seules (info-bulles conservées)
+            self.bouton_historique.setText(" Historique" if large else "")
+            self.bouton_nouvelle.setText(" Nouvelle conversation" if large else "")
+            self.voir_envoi.setText("Voir ce qui est envoyé" if large else "Envoi")
+            self.bouton_historique.setChecked(large)
+            self.panneau.setVisible(large)
 
     def _preparer_saisie(self, texte: str) -> None:
         self.saisie.setPlainText(texte)
         self.saisie.setFocus()
 
+    def _memoriser(self, widget: QWidget) -> None:
+        from ..conversations import Message, titre_automatique
+
+        if self._restauration:
+            return
+        if isinstance(widget, _Bulle):
+            qui = "utilisateur" if widget.de_moi else "assistant"
+            self.discussion.messages.append(Message(qui, widget.texte_brut, widget.heure_texte))
+            if qui == "utilisateur" and self.discussion.titre == "Nouvelle conversation":
+                self.discussion.titre = titre_automatique(widget.texte_brut.replace("📎", "").strip())
+        elif isinstance(widget, _CarteAction):
+            widget.message = Message("proposition", widget.action.description, datetime.now().strftime("%H:%M"),
+                                     "proposee")
+            self.discussion.messages.append(widget.message)
+        else:
+            return
+        self.sauver_conversation()
+
+    def sauver_conversation(self) -> None:
+        from ..conversations import enregistrer
+
+        enregistrer(self.base, self.discussion)
+        self.panneau.rafraichir(self.discussion.id)
+
     def _ajouter(self, widget: QWidget) -> None:
         """Ajoute un message : à droite pour l'étudiant, à gauche avec l'avatar pour l'assistant."""
+        self._memoriser(widget)
         ligne = QHBoxLayout()
         ligne.setContentsMargins(0, 0, 0, 0)
         ligne.setSpacing(10)

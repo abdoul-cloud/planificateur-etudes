@@ -82,6 +82,11 @@ class FenetrePrincipale(QMainWindow):
         }
         self.pile = QStackedWidget()
         self._cadres: dict[str, QWidget] = {}
+        from .aide import PageAide
+
+        self.page_aide = PageAide()
+        self.page_aide.aller_a.connect(self.afficher)
+        self.pile.addWidget(self.page_aide)
         for nom in self.ECRANS:
             cadre = self.pages[nom]
             if nom in self.ECRANS_DEFILANTS:  # pages « tableau de bord » : défilent au lieu d'être écrasées
@@ -151,6 +156,12 @@ class FenetrePrincipale(QMainWindow):
             colonne.addWidget(bouton)
             self.boutons[nom] = bouton
         colonne.addStretch()
+        aide = bouton_role(QPushButton(icone("assistant", theme.BARRE_TEXTE), "  Aide et guide"), "discret")
+        aide.setObjectName("lienNav")
+        aide.setCursor(Qt.CursorShape.PointingHandCursor)
+        aide.setToolTip("Comment utiliser le planificateur (F1)")
+        aide.clicked.connect(self.montrer_aide)
+        colonne.addWidget(aide)
         signaler = bouton_role(QPushButton(icone("alerte", theme.BARRE_TEXTE), "  Signaler un problème"), "discret")
         signaler.setObjectName("lienNav")
         signaler.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -287,7 +298,7 @@ class FenetrePrincipale(QMainWindow):
         ("Ctrl+T", "Revenir à cette semaine"),
         ("Ctrl+P", "Imprimer : planning de la semaine, ou liste des épreuves"),
         ("Ctrl+M", "Commencer la séance du moment (minuteur)"),
-        ("F1", "Afficher ces raccourcis"),
+        ("F1", "Ouvrir le guide (avec ces raccourcis)"),
     ]
 
     def _installer_raccourcis(self) -> None:
@@ -306,7 +317,7 @@ class FenetrePrincipale(QMainWindow):
         raccourci("Ctrl+T", lambda: self.raccourci_semaine(0))
         raccourci("Ctrl+P", self.raccourci_imprimer)
         raccourci("Ctrl+M", self.commencer_seance_du_moment)
-        raccourci("F1", self.montrer_raccourcis)
+        raccourci("F1", self.montrer_aide)
 
     def ecran_courant(self) -> str:
         return next((nom for nom, cadre in self._cadres.items() if cadre is self.pile.currentWidget()), "")
@@ -332,6 +343,18 @@ class FenetrePrincipale(QMainWindow):
         else:
             self.afficher("Planning")
             self.pages["Planning"].choisir_export_pdf()
+
+    def montrer_aide(self, section: str = "") -> None:
+        for bouton in self.boutons.values():  # aucun écran du menu n'est sélectionné
+            groupe = bouton.group()
+            if groupe is not None:
+                groupe.setExclusive(False)
+            bouton.setChecked(False)
+            if groupe is not None:
+                groupe.setExclusive(True)
+        self.pile.setCurrentWidget(self.page_aide)
+        if section:
+            self.page_aide.aller_a_section(section)
 
     def montrer_raccourcis(self) -> None:
         from PySide6.QtWidgets import QMessageBox

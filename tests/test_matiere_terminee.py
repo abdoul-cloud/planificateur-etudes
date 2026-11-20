@@ -54,7 +54,7 @@ def test_migration_vers_la_version_3(tmp_path):
     ancienne._cx.commit()
     ancienne.fermer()
     base = Base(chemin)
-    assert base.version == VERSION_SCHEMA == 3
+    assert base.version == VERSION_SCHEMA  # passe par toutes les migrations suivantes
     assert base.matieres.lister()[0].terminee is False
     base.fermer()
 

@@ -268,7 +268,7 @@ def test_conversation_complete(remplie):
     assert reponse == "Je l'ajoute." and len(actions) == 1 and not erreurs
     corps = faux.envois[0][1]
     assert "Nouveau message de l'étudiant : J'ai un DS" in corps["input"]
-    assert "Échanges précédents" in corps["input"] and corps["tools"] and corps["system_instruction"]
+    assert "Conversation en cours" in corps["input"] and corps["tools"] and corps["system_instruction"]
 
 
 # --- Écrans ------------------------------------------------------------------------

@@ -24,11 +24,18 @@ LIBELLES_TYPE = {
 STATUTS = {"prevue": "prévue", "terminee": "faite", "partielle": "faite en partie", "manquee": "manquée",
            "reportee": "reportée"}
 
-INSTRUCTION = """Tu es l'assistant intégré au « Planificateur d'études » d'un étudiant. Réponds en français, \
-de façon brève, claire et bienveillante.
+INSTRUCTION = """Tu es l'assistant intégré au « Planificateur d'études » d'un étudiant : à la fois \
+l'organisateur de son planning et un coach d'études bienveillant. Réponds en français, clairement, avec une \
+longueur adaptée à la question (bref pour une question simple, plus détaillé pour une explication). Tu peux \
+utiliser la mise en forme Markdown simple (gras, listes, titres courts).
 
-Tu disposes ci-dessous des données de son planificateur. Utilise-les pour répondre : n'invente ni cours, ni \
-épreuve, ni séance. Si une information nécessaire manque (heure, matière, date), pose la question au lieu \
+Au-delà du planning, tu peux l'aider pour ses études : expliquer une notion de cours, proposer une méthode \
+de révision ou des exercices, faire un petit quiz, donner un plan de travail pour une épreuve, l'aider à \
+gérer le stress ou la motivation. Appuie-toi sur ses matières, ses épreuves et ses résultats ci-dessous pour \
+personnaliser tes conseils. Pour une question sans lien avec ses études, réponds brièvement et poliment.
+
+Tu disposes ci-dessous des données de son planificateur et de la conversation en cours. Utilise-les pour \
+répondre : n'invente ni cours, ni épreuve, ni séance. Si une information nécessaire manque (heure, matière, date), pose la question au lieu \
 de deviner.
 
 Tu ne modifies rien toi-même. Pour ajouter ou changer quelque chose, appelle la fonction adaptée : \
@@ -102,9 +109,22 @@ def contexte(base: Base, maintenant: datetime) -> str:
     preferences = base.preferences()
     lignes = [f"Aujourd'hui : {JOURS[aujourd_hui.weekday()]} {aujourd_hui:%d/%m/%Y}, {maintenant:%H:%M}.",
               f"Journée type : lever {preferences.debut_journee:%H:%M}, coucher {preferences.fin_journee:%H:%M}.",
-              "", "Matières :"]
+              f"Réglages : séances de {preferences.duree_min_seance} à {preferences.duree_max_seance} min, "
+              f"au plus {preferences.max_minutes_jour} min de travail par jour, révisions régulières visées "
+              f"{preferences.minutes_revision_semaine} min par semaine, repos de {preferences.repos_avant_epreuve_min} "
+              "min avant une épreuve.",
+              "Plages garanties : " + (", ".join(
+                  f"{'/'.join(JOURS[j][:3] for j in p.jours)} {p.debut:%H:%M}–{p.fin:%H:%M}"
+                  for p in preferences.plages_garanties) or "aucune")
+              + " ; à éviter : " + (", ".join(
+                  f"{'/'.join(JOURS[j][:3] for j in p.jours)} {p.debut:%H:%M}–{p.fin:%H:%M}"
+                  for p in preferences.plages_evitees) or "aucune") + ".",
+              "", "Matières (coefficient, difficulté ressentie et maîtrise sur 5) :"]
     for x in matieres.values():
-        lignes.append(f"- {x.nom}" + (" (terminée)" if x.terminee else ""))
+        lignes.append(f"- {x.nom}" + (f" [{x.code}]" if x.code else "")
+                      + f" : coef {x.coefficient:g}, difficulté {x.difficulte}/5, maîtrise {x.maitrise}/5"
+                      + (" (terminée : plus révisée)" if x.terminee else "")
+                      + (f" — notes : {x.notes}" if x.notes else ""))
 
     lignes += ["", "Emploi du temps (14 prochains jours) :"]
     activites = base.activites.lister()
@@ -127,9 +147,33 @@ def contexte(base: Base, maintenant: datetime) -> str:
             lignes.append(f"- {t.intitule} ({nom}) pour le {_jour(t.echeance.date())} {t.echeance:%H:%M}, "
                           f"reste {t.minutes_restantes} min sur {t.minutes_estimees}")
 
-    lignes += ["", "Séances du planning (3 derniers jours et 7 prochains) :"]
-    debut = datetime.combine(aujourd_hui - timedelta(days=3), time.min)
-    fin = datetime.combine(aujourd_hui + timedelta(days=8), time.min)
+    lignes += ["", "Épreuves passées (30 derniers jours) :"]
+    for e in base.epreuves.lister(ordre="debut"):
+        if maintenant - timedelta(days=30) <= e.fin < maintenant:
+            nom = matieres[e.matiere_id].nom if e.matiere_id in matieres else "?"
+            lignes.append(f"- {_jour(e.debut.date())} {e.type.value} de {nom}")
+
+    from ..suivi import bilan
+
+    resultat = bilan(base, aujourd_hui - timedelta(days=27), aujourd_hui, maintenant)
+    taux = "—" if resultat.taux is None else f"{round(100 * resultat.taux)} %"
+    lignes += ["", f"Bilan des 4 dernières semaines : {resultat.fait} min faites sur {resultat.prevu} min prévues "
+               f"(taux de réalisation {taux}), {resultat.manque} min manquées, {resultat.non_pointe} min non pointées."]
+    for matiere_id, ligne in sorted(resultat.par_matiere.items(), key=lambda kv: -kv[1].prevu):
+        nom = matieres[matiere_id].nom if matiere_id in matieres else "sans matière"
+        lignes.append(f"- {nom} : {ligne.fait} min faites / {ligne.prevu} prévues, {ligne.manque} manquées")
+    try:
+        from ..conseils import conseils
+
+        observations = [c for c in conseils(base, maintenant) if c.cle not in ("attente", "rien")]
+    except Exception:  # noqa: BLE001 — un conseil impossible ne doit pas empêcher de répondre
+        observations = []
+    if observations:
+        lignes += ["Observations de l'application :"] + [f"- {c.titre} : {c.texte}" for c in observations]
+
+    lignes += ["", "Séances du planning (7 derniers jours et 14 prochains) :"]
+    debut = datetime.combine(aujourd_hui - timedelta(days=7), time.min)
+    fin = datetime.combine(aujourd_hui + timedelta(days=15), time.min)
     for s in base.seances.lister("debut >= ? AND debut < ?", (debut.isoformat(timespec="minutes"),
                                                              fin.isoformat(timespec="minutes")), ordre="debut"):
         matiere = matieres.get(s.matiere_id)
@@ -334,14 +378,27 @@ def appliquer(base: Base, action: Action, maintenant: datetime | None = None) ->
 # --- Conversation ---------------------------------------------------------------
 
 
+MEMOIRE_MESSAGES = 40  # messages de la conversation transmis à Gemini
+MEMOIRE_PAR_MESSAGE = 4000
+MEMOIRE_CARACTERES = 24000
+
+
 def preparer_envoi(base: Base, historique: list[tuple[str, str]], message: str,
                    maintenant: datetime | None = None) -> str:
     """Texte complet envoyé à Gemini (à construire dans le fil principal : il lit la base)."""
     maintenant = maintenant or datetime.now()
     morceaux = ["Données du planificateur :", contexte(base, maintenant), ""]
     if historique:
-        morceaux.append("Échanges précédents :")
-        for qui, texte in historique[-8:]:
+        retenus, taille = [], 0
+        for qui, texte in reversed(historique[-MEMOIRE_MESSAGES:]):  # les plus récents d'abord
+            texte = texte if len(texte) <= MEMOIRE_PAR_MESSAGE else texte[:MEMOIRE_PAR_MESSAGE] + "…"
+            if taille + len(texte) > MEMOIRE_CARACTERES:
+                break
+            retenus.append((qui, texte))
+            taille += len(texte)
+        morceaux.append("Conversation en cours (du plus ancien au plus récent)"
+                        + (" — début omis :" if len(retenus) < len(historique) else " :"))
+        for qui, texte in reversed(retenus):
             morceaux.append(f"{'Étudiant' if qui == 'utilisateur' else 'Assistant'} : {texte}")
         morceaux.append("")
     morceaux.append(f"Nouveau message de l'étudiant : {message}")

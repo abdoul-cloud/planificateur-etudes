@@ -174,6 +174,14 @@ QToolTip {{
 /* Barre latérale */
 QFrame#barreLaterale {{ background: {BARRE}; }}
 QFrame#bandeauSeance {{ background: white; border: 1px solid #C9CEF5; border-radius: 12px; }}
+QFrame#panneauConversations {{ background: white; border: 1px solid #E3E6EF; border-radius: 14px; }}
+QLabel#sectionHistorique {{ color: {TEXTE_PALE}; font-size: 8pt; font-weight: 600; letter-spacing: 1px; padding-left: 4px; }}
+QListWidget#listeConversations {{ border: none; background: transparent; outline: none; }}
+QListWidget#listeConversations::item {{ border-radius: 8px; margin: 1px 0; }}
+QListWidget#listeConversations::item:hover {{ background: #F3F4F9; }}
+QListWidget#listeConversations::item:selected {{ background: {ACCENT_PALE}; }}
+QLabel#titreConversation {{ color: {TEXTE}; font-size: 9.5pt; }}
+QLabel#dateConversation {{ color: {TEXTE_PALE}; font-size: 8pt; }}
 QFrame#bandeauVersion {{ background: {ACCENT_PALE}; border: 1px solid #C9CEF5; border-radius: 12px; }}
 QScrollArea#barreDefile, QWidget#barreInterieur {{ background: {BARRE}; border: none; }}
 QLabel#logo {{ color: white; font-size: 14pt; font-weight: 600; }}
