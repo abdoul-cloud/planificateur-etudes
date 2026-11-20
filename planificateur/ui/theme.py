@@ -173,6 +173,7 @@ QToolTip {{
 
 /* Barre latérale */
 QFrame#barreLaterale {{ background: {BARRE}; }}
+QFrame#bandeauSeance {{ background: white; border: 1px solid #C9CEF5; border-radius: 12px; }}
 QFrame#bandeauVersion {{ background: {ACCENT_PALE}; border: 1px solid #C9CEF5; border-radius: 12px; }}
 QScrollArea#barreDefile, QWidget#barreInterieur {{ background: {BARRE}; border: none; }}
 QLabel#logo {{ color: white; font-size: 14pt; font-weight: 600; }}

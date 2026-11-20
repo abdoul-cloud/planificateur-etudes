@@ -10,11 +10,14 @@ Application Windows gratuite qui transforme votre emploi du temps, vos épreuves
 - **Respecte votre rythme** : heures de lever et de coucher, repas, pauses, jours particuliers, moments préférés ou à éviter, soirées de travail garanties (réglables).
 - **Honnête** : si tout ne tient pas, elle le dit, avec le temps manquant, au lieu de surcharger vos journées.
 - **Suivi** : vous pointez chaque séance (faite, en partie, manquée) ; une séance manquée est replanifiée ; un bilan montre ce qui a été réellement fait.
+- **Minuteur de séance** : un clic sur *Commencer* (Accueil, Planning ou icône près de l'horloge) lance un minuteur discret, propose une pause toutes les 25 min, et pointe la séance tout seul à la fin avec le temps réellement travaillé.
 - **Conseils** : d'après vos séances pointées, le Bilan repère les créneaux souvent manqués, les séances trop longues ou un rythme trop chargé, et propose le réglage à appliquer d'un clic.
 - **Emploi du temps en grille** : cliquer-glisser pour ajouter un cours, glisser pour le déplacer.
 - **Rappels** : notification Windows avant chaque séance, la veille d'une épreuve, avant un travail à rendre, et un point du soir. L'application peut rester discrètement près de l'horloge et démarrer avec Windows (réglable, hors ligne).
 - **Export vers votre agenda** (Google Agenda, Outlook, téléphone) : un fichier `.ics` avec vos séances et épreuves, et un rappel avant chacune.
-- **Export PDF** du planning de la semaine, **sauvegardes** automatiques et restauration vérifiée.
+- **Export PDF** du planning de la semaine et **liste des épreuves à imprimer**.
+- **Sauvegardes** : une copie par jour sur l'ordinateur, et une copie automatique vers une clé USB ou OneDrive (chaque jour ou chaque semaine) ; restauration vérifiée.
+- **Raccourcis clavier** : Ctrl+G générer, Ctrl+N ajouter, Ctrl+←/→ changer de semaine, Ctrl+M minuteur… (F1 pour la liste).
 - **Assistant IA facultatif** (Gemini, avec votre propre clé gratuite) : questions en langage naturel, imprévus, et lecture d'un emploi du temps ou d'un calendrier d'examens en image ou PDF. Rien n'est modifié sans votre accord.
 
 | Accueil | Emploi du temps | Assistant |

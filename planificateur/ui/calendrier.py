@@ -8,8 +8,22 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QStandardPaths, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QFont, QFontMetrics, QPainter, QPainterPath, QPen
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QFontMetrics,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -490,6 +504,7 @@ class _Legende(QWidget):
 
 class PagePlanning(QWidget):
     donnees_modifiees = Signal()
+    commencer = Signal(object)  # lancer le minuteur sur une séance
     LARGEUR_TITRE_LONG = 1000
 
     def resizeEvent(self, evenement) -> None:
@@ -702,6 +717,9 @@ class PagePlanning(QWidget):
     def ouvrir_menu(self, seance: m.Seance, position) -> None:
         menu = QMenu(self)
         actions = {}
+        if seance.statut is m.StatutSeance.PREVUE and seance.debut.date() == date.today():
+            actions[menu.addAction(icone("generer", theme.ACCENT), "Commencer maintenant (minuteur)")] = "commencer"
+            menu.addSeparator()
         if seance.statut is not m.StatutSeance.TERMINEE:
             actions[menu.addAction(icone("coche", theme.SUCCES), "Faite")] = "faite"
         if seance.statut is not m.StatutSeance.PARTIELLE:
@@ -716,7 +734,9 @@ class PagePlanning(QWidget):
             actions[menu.addAction(icone("cadenas"), texte)] = "verrou"
         actions[menu.addAction(icone("supprimer", theme.DANGER), "Supprimer la séance")] = "supprimer"
         choix = actions.get(menu.exec(position))
-        if choix == "faite":
+        if choix == "commencer":
+            self.commencer.emit(seance)
+        elif choix == "faite":
             self.pointer(seance, m.StatutSeance.TERMINEE)
         elif choix == "partielle":
             minutes, ok = QInputDialog.getInt(
@@ -777,20 +797,25 @@ class PagePlanning(QWidget):
             self.exporter(chemin)
 
     def choisir_export_ics(self) -> None:
+        dialogue = DialogueExportAgenda(self.base.matieres.lister(ordre="nom"), self)
+        if dialogue.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._options_agenda = dialogue.choix()
         documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
         propose = str(Path(documents) / "Planning-revisions.ics")
         chemin, _ = QFileDialog.getSaveFileName(self, "Exporter vers un agenda", propose, "Agenda iCalendar (*.ics)")
         if chemin:
             self.exporter_agenda(Path(chemin).with_suffix(".ics"))
 
-    def exporter_agenda(self, chemin: Path) -> int | None:
+    def exporter_agenda(self, chemin: Path, **options) -> int | None:
         """Séances et épreuves d'aujourd'hui jusqu'à la fin de l'horizon de planification."""
+        options = options or getattr(self, "_options_agenda", {})
         from ..export_ics import exporter_ics
 
         du = date.today()
         au = du + timedelta(weeks=self.base.preferences().horizon_semaines)
         try:
-            nombre = exporter_ics(self.base, du, au, chemin)
+            nombre = exporter_ics(self.base, du, au, chemin, **options)
         except OSError as erreur:
             self.avertir(self, "Export impossible", str(erreur))
             return None
@@ -822,3 +847,45 @@ class PagePlanning(QWidget):
         self.base.seances.supprimer(seance.id)
         self.rafraichir()
         self.donnees_modifiees.emit()
+
+
+class DialogueExportAgenda(QDialog):
+    """Choisir ce qui part dans l'agenda : matières, épreuves, rappels."""
+
+    def __init__(self, matieres: list[m.Matiere], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Exporter vers un agenda")
+        aide = QLabel("Séances et épreuves d'aujourd'hui à la fin de la période planifiée. Choisissez ce qui doit "
+                      "apparaître dans votre agenda :")
+        aide.setWordWrap(True)
+        self.cases: dict[int, QCheckBox] = {}
+        colonne = QVBoxLayout(self)
+        colonne.setContentsMargins(22, 20, 22, 18)
+        colonne.addWidget(aide)
+        for x in matieres:
+            if x.terminee:
+                continue
+            case = QCheckBox(x.nom)
+            case.setChecked(True)
+            pastille = QPixmap(12, 12)
+            pastille.fill(QColor(x.couleur))
+            case.setIcon(QIcon(pastille))
+            self.cases[x.id] = case
+            colonne.addWidget(case)
+        self.epreuves = QCheckBox("Inclure les épreuves (rappel 1 h avant)")
+        self.epreuves.setChecked(True)
+        self.alarmes = QCheckBox("Rappel 10 min avant chaque séance")
+        self.alarmes.setChecked(True)
+        colonne.addSpacing(6)
+        colonne.addWidget(self.epreuves)
+        colonne.addWidget(self.alarmes)
+        boutons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bouton_role(boutons.button(QDialogButtonBox.StandardButton.Ok), "primaire").setText("Exporter…")
+        boutons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annuler")
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
+
+    def choix(self) -> dict:
+        return {"matieres_choisies": {i for i, case in self.cases.items() if case.isChecked()},
+                "avec_epreuves": self.epreuves.isChecked(), "avec_alarmes": self.alarmes.isChecked()}

@@ -216,6 +216,19 @@ class FenetrePrincipale(QMainWindow):
         section_rappels = self.pages["Préférences"].section_rappels
         section_rappels.notificateur = self.notificateur
         section_rappels.rafraichir()
+
+        # Minuteur de séance
+        from .minuteur import GestionnaireMinuteur
+
+        self.minuteur = GestionnaireMinuteur(
+            base, lambda rappel: self.notificateur.disponible and self.notificateur.notifier(rappel), self)
+        self.minuteur.seance_pointee.connect(self.rafraichir_tout)
+        self._installer_raccourcis()
+        self.minuteur.change.connect(self.pages["Accueil"].rafraichir)
+        self.pages["Accueil"].minuteur_actif = lambda: self.minuteur.etat.seance_id if self.minuteur.etat else None
+        self.pages["Accueil"].commencer.connect(self.commencer_seance)
+        planning.commencer.connect(self.commencer_seance)
+        self.notificateur.commencer.connect(self.commencer_seance_du_moment)
         self.pages["Préférences"].section_versions.verificateur = self.verifier_mises_a_jour
         self._quitter_vraiment = False
         self._prevenu_arriere_plan = False
@@ -263,6 +276,107 @@ class FenetrePrincipale(QMainWindow):
         self.notificateur.cacher()
         evenement.accept()
         QApplication.quit()
+
+    # --- Raccourcis clavier ----------------------------------------------------------------
+
+    RACCOURCIS = [
+        ("Ctrl+1 … Ctrl+0", "Aller à un écran (dans l'ordre du menu)"),
+        ("Ctrl+G", "Générer le planning"),
+        ("Ctrl+N", "Ajouter (matière, épreuve, travail : selon l'écran)"),
+        ("Ctrl+← / Ctrl+→", "Semaine précédente / suivante (Planning, Emploi du temps)"),
+        ("Ctrl+T", "Revenir à cette semaine"),
+        ("Ctrl+P", "Imprimer : planning de la semaine, ou liste des épreuves"),
+        ("Ctrl+M", "Commencer la séance du moment (minuteur)"),
+        ("F1", "Afficher ces raccourcis"),
+    ]
+
+    def _installer_raccourcis(self) -> None:
+        from PySide6.QtGui import QKeySequence, QShortcut
+
+        def raccourci(touches: str, action) -> None:
+            QShortcut(QKeySequence(touches), self, activated=action)
+
+        for n, nom in enumerate(self.ECRANS[:10]):
+            raccourci(f"Ctrl+{(n + 1) % 10}", lambda nom=nom: self.afficher(nom))
+            self.boutons[nom].setToolTip(f"Ctrl+{(n + 1) % 10}")
+        raccourci("Ctrl+G", self.raccourci_generer)
+        raccourci("Ctrl+N", self.raccourci_ajouter)
+        raccourci("Ctrl+Left", lambda: self.raccourci_semaine(-1))
+        raccourci("Ctrl+Right", lambda: self.raccourci_semaine(1))
+        raccourci("Ctrl+T", lambda: self.raccourci_semaine(0))
+        raccourci("Ctrl+P", self.raccourci_imprimer)
+        raccourci("Ctrl+M", self.commencer_seance_du_moment)
+        raccourci("F1", self.montrer_raccourcis)
+
+    def ecran_courant(self) -> str:
+        return next((nom for nom, cadre in self._cadres.items() if cadre is self.pile.currentWidget()), "")
+
+    def raccourci_generer(self) -> None:
+        self.afficher("Planning")
+        self.pages["Planning"].generer()
+
+    def raccourci_ajouter(self) -> None:
+        page = self.pages.get(self.ecran_courant())
+        if hasattr(page, "ajouter") and hasattr(page, "bouton_ajouter"):
+            page.ajouter()
+
+    def raccourci_semaine(self, sens: int) -> None:
+        page = self.pages.get(self.ecran_courant())
+        if self.ecran_courant() in ("Planning", "Emploi du temps"):
+            page.aller(sens) if sens else page.aujourd_hui()
+
+    def raccourci_imprimer(self) -> None:
+        ecran = self.ecran_courant()
+        if ecran == "Épreuves":
+            self.pages["Épreuves"].choisir_impression()
+        else:
+            self.afficher("Planning")
+            self.pages["Planning"].choisir_export_pdf()
+
+    def montrer_raccourcis(self) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        lignes = "".join(f"<tr><td style='padding:3px 16px 3px 0'><b>{touches}</b></td><td>{effet}</td></tr>"
+                         for touches, effet in self.RACCOURCIS)
+        boite = QMessageBox(self)
+        boite.setWindowTitle("Raccourcis clavier")
+        boite.setTextFormat(Qt.TextFormat.RichText)
+        boite.setText(f"<table>{lignes}</table>")
+        boite.exec()
+
+    def commencer_seance(self, seance) -> bool:
+        return self.minuteur.lancer(seance)
+
+    def commencer_seance_du_moment(self) -> bool:
+        from datetime import datetime
+
+        from ..minuteur import seance_a_lancer
+
+        seance = seance_a_lancer(self.base, datetime.now())
+        return seance is not None and self.minuteur.lancer(seance)
+
+    def copie_externe_si_due(self) -> None:
+        """Copie automatique vers la clé USB / OneDrive si la fréquence choisie est atteinte.
+
+        Dossier absent (clé débranchée) : une notification par jour au plus, puis nouvel essai plus tard.
+        """
+        from datetime import datetime
+
+        from .. import rappels
+        from .. import sauvegarde_externe as se
+
+        maintenant = datetime.now()
+        if not se.copie_due(self.base, maintenant):
+            return
+        try:
+            se.faire_copie(self.base, maintenant)
+        except se.DossierIndisponible as erreur:
+            cle = f"copie-externe:{maintenant:%Y-%m-%d}"
+            if self.notificateur.disponible and cle not in rappels.deja_envoyes(self.base):
+                self.notificateur.notifier(rappels.Rappel(cle, "Copie de sauvegarde en attente", str(erreur),
+                                                          "Sauvegarde"))
+                rappels.marquer_envoyes(self.base, [cle], maintenant)
+        self.pages["Sauvegarde"].rafraichir()
 
     def importer_epreuves(self) -> None:
         assistant = self.pages["Assistant"]

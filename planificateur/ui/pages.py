@@ -375,6 +375,41 @@ class PageEmploiDuTemps(PageListe):
 
 
 class PageEpreuves(PageListe):
+    def __init__(self, base: Base, parent=None) -> None:
+        super().__init__(base, parent)
+        imprimer = QPushButton(icone("imprimer"), " Imprimer")
+        imprimer.setToolTip("Liste des épreuves à venir en PDF, à afficher ou imprimer")
+        imprimer.clicked.connect(self.choisir_impression)
+        self.actions.insertWidget(0, imprimer)
+        self.bouton_imprimer = imprimer
+
+    def choisir_impression(self) -> None:
+        from pathlib import Path
+
+        from PySide6.QtCore import QStandardPaths
+        from PySide6.QtWidgets import QFileDialog
+
+        documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
+        chemin, _ = QFileDialog.getSaveFileName(self, "Imprimer la liste des épreuves",
+                                                str(Path(documents) / "Mes-epreuves.pdf"), "Document PDF (*.pdf)")
+        if chemin:
+            self.imprimer(Path(chemin).with_suffix(".pdf"))
+
+    def imprimer(self, chemin, ouvrir: bool = True):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from .export import exporter_epreuves_pdf
+
+        try:
+            chemin, _ = exporter_epreuves_pdf(self.base, chemin)
+        except OSError as erreur:
+            QMessageBox.warning(self, "Impression impossible", str(erreur))
+            return None
+        if ouvrir:  # s'ouvre dans le lecteur PDF : Ctrl+P pour imprimer
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(chemin)))
+        return chemin
+
     titre = "Épreuves"
     aide = (
         "Interrogations, devoirs surveillés, compositions et examens à date et heure fixes. "

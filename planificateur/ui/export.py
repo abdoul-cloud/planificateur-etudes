@@ -13,7 +13,7 @@ from .. import modeles as m
 from ..base import Base
 from ..moteur.creneaux import occurrences
 from . import theme
-from .calendrier import CalendrierSemaine, _Legende, texte_semaine
+from .calendrier import MOIS, CalendrierSemaine, _Legende, texte_semaine
 from .commun import JOURS, LIBELLES, texte_duree
 
 LARGEUR_LOGIQUE = 1500  # largeur de référence du calendrier avant mise à l'échelle
@@ -154,3 +154,64 @@ def exporter_png(base: Base, lundi: date, chemin: Path | str, dpi: int = 200,
     if not image.save(str(chemin), "PNG"):
         raise OSError(f"Impossible d'écrire {chemin}")
     return chemin
+
+
+def exporter_epreuves_pdf(base: Base, chemin: Path | str, depuis: date | None = None,
+                          genere_le: datetime | None = None) -> tuple[Path, int]:
+    """Liste des épreuves à venir, en A4 portrait, à afficher ou à imprimer. Renvoie (chemin, nombre)."""
+    from html import escape
+
+    from PySide6.QtGui import QTextDocument
+
+    depuis = depuis or date.today()
+    genere_le = genere_le or datetime.now()
+    matieres = {x.id: x for x in base.matieres.lister()}
+    epreuves = sorted((e for e in base.epreuves.lister() if e.debut.date() >= depuis), key=lambda e: e.debut)
+    lignes = []
+    mois_courant = None
+    for e in epreuves:
+        mois = f"{MOIS[e.debut.month - 1].capitalize()} {e.debut.year}"
+        if mois != mois_courant:
+            mois_courant = mois
+            lignes.append(f"<tr><td colspan='5' class='mois'>{mois}</td></tr>")
+        matiere = matieres.get(e.matiere_id)
+        couleur = matiere.couleur if matiere else theme.ACCENT
+        jours = (e.debut.date() - depuis).days
+        dans = "aujourd'hui" if jours == 0 else "demain" if jours == 1 else f"dans {jours} j"
+        details = escape(" · ".join(x for x in (e.intitule, e.chapitres) if x))
+        lignes.append(
+            f"<tr><td class='date'>{JOURS[e.debut.weekday()][:3].lower()}. {e.debut:%d/%m}<br>"
+            f"<span class='doux'>{dans}</span></td>"
+            f"<td>{e.debut:%H:%M} – {e.fin:%H:%M}</td>"
+            f"<td><span style='color:{couleur}'>&#9632;</span> <b>{escape(matiere.nom if matiere else '?')}</b></td>"
+            f"<td>{LIBELLES[e.type]}</td><td class='doux'>{details}</td></tr>")
+    if not lignes:
+        lignes.append("<tr><td colspan='5' class='doux'>Aucune épreuve à venir.</td></tr>")
+    html = f"""
+    <style>
+      body {{ font-family: 'Segoe UI'; font-size: 10pt; color: #1F2433; }}
+      h1 {{ font-size: 18pt; margin: 0; }}
+      .doux {{ color: #6B7280; }}
+      table {{ border-collapse: collapse; width: 100%; margin-top: 14px; }}
+      th {{ text-align: left; color: #6B7280; font-weight: 600; border-bottom: 1px solid #D5D9E3; padding: 6px; }}
+      td {{ padding: 7px 6px; border-bottom: 1px solid #EEF0F6; vertical-align: top; }}
+      td.mois {{ font-weight: 700; color: #4F5BD5; padding-top: 14px; border-bottom: none; }}
+      td.date {{ white-space: nowrap; }}
+    </style>
+    <h1>Mes épreuves</h1>
+    <p class='doux'>À partir du {depuis:%d/%m/%Y} · {len(epreuves)} épreuve{'s' if len(epreuves) > 1 else ''} ·
+    imprimé le {genere_le:%d/%m/%Y à %H:%M} par le Planificateur d'études</p>
+    <table width='100%' cellspacing='0'><tr><th>Date</th><th>Horaire</th><th>Matière</th><th>Type</th><th>Détails</th></tr>
+    {''.join(lignes)}</table>
+    """
+    chemin = Path(chemin)
+    ecrivain = QPdfWriter(str(chemin))
+    ecrivain.setResolution(300)
+    ecrivain.setTitle("Mes épreuves")
+    ecrivain.setCreator("Planificateur d'études")
+    ecrivain.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Portrait,
+                                       QMarginsF(15, 15, 15, 15), QPageLayout.Unit.Millimeter))
+    document = QTextDocument()
+    document.setHtml(html)
+    document.print_(ecrivain)
+    return chemin, len(epreuves)

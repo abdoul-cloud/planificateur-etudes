@@ -17,6 +17,7 @@ INTERVALLE_MS = 60_000  # vérification des rappels chaque minute
 
 class Notificateur(QObject):
     ouvrir = Signal(str)  # écran à afficher
+    commencer = Signal()  # lancer le minuteur sur la séance du moment
     quitter = Signal()
 
     def __init__(self, base: Base, parent=None) -> None:
@@ -42,6 +43,9 @@ class Notificateur(QObject):
                 menu.addAction(action)
             menu.addSeparator()
             menu.addAction(self.action_prochaine)
+            self.action_commencer = QAction("▶  Commencer la séance (minuteur)", menu)
+            self.action_commencer.triggered.connect(self.commencer.emit)
+            menu.addAction(self.action_commencer)
             menu.addSeparator()
             menu.addAction(quitter)
             menu.aboutToShow.connect(self._actualiser_menu)
@@ -67,6 +71,9 @@ class Notificateur(QObject):
             self.ouvrir.emit("")
 
     def _actualiser_menu(self) -> None:
+        from ..minuteur import seance_a_lancer
+
+        self.action_commencer.setEnabled(seance_a_lancer(self.base, self.maintenant or datetime.now()) is not None)
         seance = prochaine_seance(self.base, self.maintenant or datetime.now())
         if seance is None:
             self.action_prochaine.setText("Aucune séance prévue")

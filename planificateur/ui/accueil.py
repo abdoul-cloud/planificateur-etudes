@@ -256,8 +256,50 @@ class _BandeauVersion(QFrame):
         self.hide()
 
 
+class _BandeauSeance(QFrame):
+    """« Prochaine séance : Maths, 20:00 – 21:30 » avec le bouton Commencer (minuteur)."""
+
+    commencer = Signal(object)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.seance = None
+        self.setObjectName("bandeauSeance")
+        ligne = QHBoxLayout(self)
+        ligne.setContentsMargins(18, 10, 12, 10)
+        ligne.setSpacing(12)
+        pictogramme = QLabel()
+        pictogramme.setPixmap(pixmap_icone("horloge", theme.ACCENT, 20))
+        self.texte = QLabel()
+        self.texte.setWordWrap(True)
+        self.bouton = bouton_role(QPushButton(icone("generer", "#FFFFFF"), " Commencer"), "primaire")
+        self.bouton.setToolTip("Lance le minuteur : pauses proposées, et la séance se pointe toute seule à la fin")
+        self.bouton.clicked.connect(lambda: self.seance is not None and self.commencer.emit(self.seance))
+        ligne.addWidget(pictogramme)
+        ligne.addWidget(self.texte, 1)
+        ligne.addWidget(self.bouton)
+        self.hide()
+
+    def definir(self, seance, nom: str, maintenant, en_cours: bool) -> None:
+        self.seance = seance
+        if seance is None:
+            self.hide()
+            return
+        if en_cours:
+            self.texte.setText(f"<b>Séance en cours dans le minuteur</b> · {nom}")
+            self.bouton.setText(" Afficher")
+        else:
+            quand = ("maintenant" if seance.debut <= maintenant
+                     else f"dans {int((seance.debut - maintenant).total_seconds() // 60)} min")
+            self.texte.setText(f"<b>{nom}</b> · {seance.debut:%H:%M} – {seance.fin:%H:%M} "
+                               f"<span style='color:{theme.TEXTE_DOUX}'>({quand})</span>")
+            self.bouton.setText(" Commencer")
+        self.show()
+
+
 class PageAccueil(QWidget):
     aller_a = Signal(str)
+    commencer = Signal(object)
     donnees_modifiees = Signal()
     replanifier = Signal()
 
@@ -280,6 +322,9 @@ class PageAccueil(QWidget):
         haut.addLayout(textes, 1)
         haut.addWidget(bouton_planning, 0, Qt.AlignmentFlag.AlignTop)
         self.bandeau_version = _BandeauVersion(base)
+        self.bandeau_seance = _BandeauSeance()
+        self.bandeau_seance.commencer.connect(self.commencer)
+        self.minuteur_actif = lambda: None  # fourni par la fenêtre : id de la séance chronométrée, ou None
 
         self.stat_jour = _Statistique("horloge", "Aujourd'hui")
         self.stat_semaine = _Statistique("planning", "Cette semaine")
@@ -343,6 +388,7 @@ class PageAccueil(QWidget):
         disposition.setSpacing(18)
         disposition.addLayout(haut)
         disposition.addWidget(self.bandeau_version)
+        disposition.addWidget(self.bandeau_seance)
         disposition.addWidget(self.premiers_pas)
         disposition.addLayout(statistiques)
         disposition.addWidget(self.a_pointer)
@@ -394,6 +440,14 @@ class PageAccueil(QWidget):
         self.date_du_jour.setText(_texte_jour(aujourd_hui).capitalize())
         matieres = {x.id: x for x in self.base.matieres.lister()}
         self.premiers_pas.setVisible(not matieres or not self.base.activites.lister())
+        # Séance à lancer avec le minuteur (ou celle en cours dans le minuteur)
+        from ..minuteur import seance_a_lancer
+
+        chronometree = self.minuteur_actif()
+        seance = self.base.seances.obtenir(chronometree) if chronometree else seance_a_lancer(self.base, maintenant)
+        matiere = matieres.get(seance.matiere_id) if seance is not None else None
+        self.bandeau_seance.definir(seance, matiere.nom if matiere else "Séance de travail", maintenant,
+                                    en_cours=bool(chronometree))
         en_attente = a_pointer(self.base, maintenant)
         self.a_pointer.setVisible(bool(en_attente))
         self.a_pointer.definir(en_attente, matieres)

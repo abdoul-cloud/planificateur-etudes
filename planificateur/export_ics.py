@@ -75,8 +75,12 @@ def _evenement(uid: str, debut: datetime, fin: datetime, titre: str, description
 
 
 def generer_ics(base: Base, du: date, au: date, maintenant: datetime | None = None,
-                avec_alarmes: bool = True) -> tuple[str, int]:
-    """Texte du calendrier et nombre d'événements, du jour `du` au jour `au` inclus."""
+                avec_alarmes: bool = True, matieres_choisies: set[int] | None = None,
+                avec_epreuves: bool = True) -> tuple[str, int]:
+    """Texte du calendrier et nombre d'événements, du jour `du` au jour `au` inclus.
+
+    `matieres_choisies` : seulement ces matières (None = toutes) ; `avec_epreuves` : inclure les épreuves.
+    """
     maintenant = maintenant or datetime.now()
     horodatage = maintenant.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     debut_periode = datetime.combine(du, datetime.min.time())
@@ -93,6 +97,8 @@ def generer_ics(base: Base, du: date, au: date, maintenant: datetime | None = No
             continue
         if s.statut in (m.StatutSeance.MANQUEE, m.StatutSeance.REPORTEE):
             continue  # remplacée par une autre séance
+        if matieres_choisies is not None and s.matiere_id not in matieres_choisies:
+            continue
         matiere = matieres.get(s.matiere_id)
         nom = matiere.nom if matiere else "Travail"
         details = []
@@ -110,7 +116,9 @@ def generer_ics(base: Base, du: date, au: date, maintenant: datetime | None = No
                              10 if avec_alarmes and s.statut is m.StatutSeance.PREVUE else None)
         nombre += 1
     for e in sorted(epreuves.values(), key=lambda e: e.debut):
-        if not (debut_periode <= e.debut < fin_periode):
+        if not avec_epreuves or not (debut_periode <= e.debut < fin_periode):
+            continue
+        if matieres_choisies is not None and e.matiere_id not in matieres_choisies:
             continue
         matiere = matieres.get(e.matiere_id)
         titre = f"{TYPES_EPREUVE.get(e.type, 'Épreuve')} · {matiere.nom if matiere else ''}".rstrip(" ·")

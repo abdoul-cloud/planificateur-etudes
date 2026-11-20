@@ -7,7 +7,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..base import Base, verifier_sauvegarde
 from . import theme
@@ -85,6 +94,46 @@ class PageDonnees(QWidget):
         actions.addWidget(sauver, 1)
         actions.addWidget(restaurer, 1)
 
+        # Copie automatique ailleurs (clé USB, disque externe, OneDrive)
+        from .. import sauvegarde_externe as se
+
+        self.carte_externe = self._carte("Copie automatique ailleurs (clé USB, OneDrive…)")
+        explication = QLabel("Si cet ordinateur tombe en panne ou est perdu, cette copie permet de tout retrouver. "
+                             "Choisissez un dossier sur une clé USB, un disque externe ou dans OneDrive (copié en "
+                             "ligne automatiquement). Si la clé est débranchée, la copie se fera à son retour.")
+        explication.setWordWrap(True)
+        explication.setObjectName("doux")
+        self.etat_externe = QLabel()
+        self.etat_externe.setWordWrap(True)
+        self.frequence = QComboBox()
+        for jours, libelle in se.FREQUENCES.items():
+            self.frequence.addItem(libelle, jours)
+        self.frequence.currentIndexChanged.connect(self._changer_frequence)
+        choisir = bouton_role(QPushButton(icone("dossier", "#FFFFFF"), " Choisir le dossier…"), "primaire")
+        choisir.clicked.connect(self.choisir_dossier_externe)
+        self.bouton_onedrive = QPushButton("Utiliser OneDrive")
+        self.bouton_onedrive.setToolTip("Copie dans OneDrive > Planificateur d'études (sauvegardé en ligne par Microsoft)")
+        self.bouton_onedrive.clicked.connect(lambda: self.definir_dossier_externe(se.dossier_onedrive()))
+        self.bouton_onedrive.setVisible(se.dossier_onedrive() is not None)
+        self.bouton_copier = QPushButton(icone("sauvegarde"), " Copier maintenant")
+        self.bouton_copier.clicked.connect(self.copier_maintenant)
+        self.bouton_arreter = bouton_role(QPushButton("Arrêter"), "discret")
+        self.bouton_arreter.clicked.connect(lambda: self.definir_dossier_externe(None))
+        ligne_dossier = QHBoxLayout()
+        ligne_dossier.addWidget(choisir)
+        ligne_dossier.addWidget(self.bouton_onedrive)
+        ligne_dossier.addStretch()
+        ligne_dossier.addWidget(self.bouton_arreter)
+        ligne_frequence = QHBoxLayout()
+        ligne_frequence.addWidget(QLabel("Fréquence :"))
+        ligne_frequence.addWidget(self.frequence)
+        ligne_frequence.addWidget(self.bouton_copier)
+        ligne_frequence.addStretch()
+        self.carte_externe.layout().addWidget(explication)
+        self.carte_externe.layout().addWidget(self.etat_externe)
+        self.carte_externe.layout().addLayout(ligne_dossier)
+        self.carte_externe.layout().addLayout(ligne_frequence)
+
         # Sauvegardes automatiques et copies de sécurité
         self.historique = self._carte("Copies dans le dossier des sauvegardes")
         entete_hist = QHBoxLayout()
@@ -107,6 +156,7 @@ class PageDonnees(QWidget):
         disposition.addWidget(self.message, 0, Qt.AlignmentFlag.AlignLeft)
         disposition.addWidget(fichier)
         disposition.addLayout(actions)
+        disposition.addWidget(self.carte_externe)
         disposition.addWidget(self.historique)
         disposition.addStretch(1)
         self.rafraichir()
@@ -126,7 +176,67 @@ class PageDonnees(QWidget):
         self.message.show()
         QTimer.singleShot(6000, self.message.hide)
 
+    # --- Copie automatique ailleurs -------------------------------------------------------
+
+    def choisir_dossier_externe(self) -> None:
+        dossier = QFileDialog.getExistingDirectory(self, "Dossier de la copie automatique (clé USB, OneDrive…)")
+        if dossier:
+            self.definir_dossier_externe(Path(dossier))
+
+    def definir_dossier_externe(self, dossier: Path | None) -> None:
+        from .. import sauvegarde_externe as se
+
+        if dossier is not None and dossier.resolve() in (self.base.chemin.parent.resolve(),
+                                                          self.base.dossier_sauvegardes.resolve()):
+            self.avertir(self, "Choisissez un autre dossier",
+                         "Ce dossier est déjà sur cet ordinateur avec vos données : choisissez une clé USB, "
+                         "un disque externe ou OneDrive.")
+            return
+        reglages = se.charger(self.base)
+        reglages.dossier = str(dossier) if dossier is not None else ""
+        reglages.derniere = None
+        se.enregistrer(self.base, reglages)
+        if dossier is not None:
+            self.copier_maintenant()
+        else:
+            self.informer("Copie automatique arrêtée.")
+        self.rafraichir()
+
+    def _changer_frequence(self) -> None:
+        from .. import sauvegarde_externe as se
+
+        if getattr(self, "_chargement", False):
+            return
+        reglages = se.charger(self.base)
+        reglages.frequence_jours = self.frequence.currentData()
+        se.enregistrer(self.base, reglages)
+        self.rafraichir()
+
+    def copier_maintenant(self) -> bool:
+        from .. import sauvegarde_externe as se
+
+        try:
+            cible = se.faire_copie(self.base, datetime.now())
+        except se.DossierIndisponible as erreur:
+            self.avertir(self, "Copie impossible pour l'instant", str(erreur))
+            self.rafraichir()
+            return False
+        self.informer(f"Copie faite : {cible.name}")
+        self.rafraichir()
+        return True
+
     def rafraichir(self) -> None:
+        from .. import sauvegarde_externe as se
+
+        reglages = se.charger(self.base)
+        maintenant = datetime.now()
+        self.etat_externe.setText(se.etat_texte(self.base, maintenant))
+        self.etat_externe.setStyleSheet(f"color: {theme.DANGER};" if se.en_retard(self.base, maintenant) else "")
+        self._chargement = True
+        self.frequence.setCurrentIndex(max(0, self.frequence.findData(reglages.frequence_jours)))
+        self._chargement = False
+        for w in (self.frequence, self.bouton_copier, self.bouton_arreter):
+            w.setEnabled(reglages.actif)
         vider(self.liste)
         copies = sorted(self.base.dossier_sauvegardes.glob("*.db"), key=lambda f: f.stat().st_mtime, reverse=True)
         if not copies:
