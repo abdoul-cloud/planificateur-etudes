@@ -16,7 +16,7 @@ from ..moteur.creneaux import Intervalle, occurrences
 from ..moteur.placement import minutes_preparation
 from ..suivi import marquer
 from .gemini import ClientGemini, ErreurGemini
-from .import_edt import JOURS, associer_matiere, lire_heure
+from .import_edt import JOURS, _normaliser, associer_matiere, lire_heure
 
 LIBELLES_TYPE = {
     m.TypeSeance.REVISION: "révision", m.TypeSeance.PREPARATION: "préparation", m.TypeSeance.TRAVAIL: "travail",
@@ -42,7 +42,8 @@ Tu ne modifies rien toi-même. Pour ajouter ou changer quelque chose, appelle la
 l'étudiant verra chaque proposition et décidera de l'appliquer. Une indisponibilité ponctuelle (sortie, \
 rendez-vous, sport…) s'ajoute avec « ajouter_activite » de type « personnel » à une date précise. Une activité qui revient chaque semaine sur plusieurs jours s'ajoute en un seul appel, \navec tous ses jours dans « jours » (sans date). Après des \
 changements qui touchent le planning, propose aussi « regenerer_planning ». Les noms de matière doivent être \
-pris dans la liste fournie. Dates au format AAAA-MM-JJ, heures au format HH:MM.
+pris dans la liste fournie ; si une matière manque, propose d'abord « ajouter_matiere » (dans la même \
+réponse, avant les propositions qui l'utilisent). Dates au format AAAA-MM-JJ, heures au format HH:MM.
 
 Règles du planning (pour expliquer ses choix) : les cours et épreuves ne bougent jamais ; les échéances les \
 plus proches passent d'abord, étalées sur plusieurs jours ; aucune séance dans les heures qui précèdent une \
@@ -88,6 +89,14 @@ OUTILS = [
         "statut": {"type": "string", "enum": ["faite", "partielle", "manquee"]},
         "minutes": {"type": "integer", "description": "Minutes réellement travaillées si « partielle »"},
     }, ["seance_id", "statut"]),
+    _f("ajouter_matiere", "Ajoute une nouvelle matière à la liste de l'étudiant (avant d'y rattacher cours, "
+       "épreuves ou travaux).", {
+        "nom": {**_TEXTE, "description": "Nom de la matière, tel que l'étudiant le dit"},
+        "coefficient": {"type": "number", "description": "Coefficient (1 si inconnu)"},
+        "difficulte": {"type": "integer", "description": "Difficulté ressentie, de 1 (facile) à 5 (très difficile)"},
+        "maitrise": {"type": "integer", "description": "Maîtrise actuelle, de 1 (pas du tout) à 5 (très bonne)"},
+        "code": {**_TEXTE, "description": "Code de l'UE, si connu"},
+    }, ["nom"]),
     _f("marquer_matiere_terminee", "Marque une matière comme terminée : elle ne sera plus révisée.", {
         "matiere": {**_TEXTE, "description": "Nom exact d'une matière de la liste"},
     }, ["matiere"]),
@@ -196,7 +205,8 @@ def _matiere(base: Base, nom) -> m.Matiere:
     matieres = base.matieres.lister()
     identifiant = associer_matiere(str(nom or ""), matieres)
     if identifiant is None:
-        raise ValueError(f"Matière inconnue : « {nom} ».")
+        raise ValueError(f"Matière inconnue : « {nom} ». Si elle vient d'être proposée, appliquez d'abord "
+                         "la proposition « Ajouter la matière ».")
     return base.matieres.obtenir(identifiant)
 
 
@@ -248,6 +258,23 @@ def construire(base: Base, nom: str, a: dict):
         return seance
     if nom == "marquer_matiere_terminee":
         return _matiere(base, a.get("matiere"))
+    if nom == "ajouter_matiere":
+        nom_matiere = " ".join(str(a.get("nom", "")).split())
+        if not nom_matiere:
+            raise ValueError("Indiquez le nom de la matière.")
+        if any(_normaliser(x.nom) == _normaliser(nom_matiere) for x in base.matieres.lister()):
+            raise ValueError(f"La matière « {nom_matiere} » existe déjà.")
+
+        def entre(valeur, bas, haut, defaut):
+            try:
+                return max(bas, min(haut, type(defaut)(valeur)))
+            except (TypeError, ValueError):
+                return defaut
+
+        return m.Matiere(nom_matiere, code=str(a.get("code") or "").strip(),
+                         coefficient=entre(a.get("coefficient", 1.0), 0.5, 50.0, 1.0),
+                         difficulte=entre(a.get("difficulte", 3), 1, 5, 3), maitrise=entre(a.get("maitrise", 3), 1, 5, 3),
+                         couleur=m.couleur_libre([x.couleur for x in base.matieres.lister()]))
     if nom == "regenerer_planning":
         return None
     raise ValueError(f"Action inconnue : {nom}")
@@ -271,6 +298,9 @@ def decrire(base: Base, nom: str, a: dict) -> str:
         return f"Marquer la séance du {_jour(objet.debut.date())} {objet.debut:%H:%M} comme {statut}"
     if nom == "marquer_matiere_terminee":
         return f"Marquer « {objet.nom} » comme terminée (plus de révisions)"
+    if nom == "ajouter_matiere":
+        return (f"Ajouter la matière « {objet.nom} » (coefficient {objet.coefficient:g}, difficulté "
+                f"{objet.difficulte}/5, maîtrise {objet.maitrise}/5)")
     return "Recalculer le planning"
 
 
@@ -325,10 +355,37 @@ def _developper(appel) -> list:
     return [Appel(appel.nom, {**base_args, "jour": JOURS[j]}) for j in jours]
 
 
+def _decrire_en_attente(nom: str, a: dict, matiere: str) -> str:
+    """Description d'une proposition dont la matière sera créée par une autre proposition de la même réponse."""
+    if nom == "ajouter_epreuve":
+        return (f"Ajouter l'épreuve : {str(a.get('type', 'épreuve')).replace('_', ' ')} de {matiere}, "
+                f"{a.get('date', '?')} {a.get('debut', '?')}–{a.get('fin', '?')} (après l'ajout de la matière)")
+    if nom == "ajouter_travail":
+        return (f"Ajouter le travail : « {a.get('intitule', 'Travail')} » ({matiere}), pour le "
+                f"{a.get('echeance_date', '?')} (après l'ajout de la matière)")
+    if nom == "marquer_matiere_terminee":
+        return f"Marquer « {matiere} » comme terminée (après l'ajout de la matière)"
+    raise ValueError(f"Matière inconnue : « {matiere} ».")
+
+
 def preparer(base: Base, appels) -> tuple[list[Action], list[str]]:
     actions, erreurs = [], []
-    for appel in [a for brut in appels for a in _developper(brut)]:
+    liste = [a for brut in appels for a in _developper(brut)]
+    # Les matières à créer passent en premier ; leurs noms sont acceptés par les autres propositions
+    liste.sort(key=lambda a: a.nom != "ajouter_matiere")
+    en_attente = {_normaliser(str(a.arguments.get("nom", ""))): str(a.arguments.get("nom", ""))
+                  for a in liste if a.nom == "ajouter_matiere"}
+    for appel in liste:
         try:
+            matiere = str(appel.arguments.get("matiere") or "")
+            if (appel.nom != "ajouter_matiere" and matiere and _normaliser(matiere) in en_attente
+                    and associer_matiere(matiere, base.matieres.lister()) is None):
+                if appel.nom == "ajouter_activite":  # la matière d'une activité est facultative
+                    description = decrire(base, appel.nom, appel.arguments)
+                else:
+                    description = _decrire_en_attente(appel.nom, appel.arguments, en_attente[_normaliser(matiere)])
+                actions.append(Action(appel.nom, appel.arguments, description))
+                continue
             actions.append(Action(appel.nom, appel.arguments, decrire(base, appel.nom, appel.arguments)))
         except (ValueError, TypeError, KeyError) as erreur:
             recu = ", ".join(f"{k}={v!r}" for k, v in appel.arguments.items())
@@ -366,6 +423,15 @@ def appliquer(base: Base, action: Action, maintenant: datetime | None = None) ->
     elif action.nom == "marquer_matiere_terminee":
         objet.terminee = True
         base.matieres.modifier(objet)
+    elif action.nom == "ajouter_matiere":
+        from ..suivi import relier_activites
+
+        matiere = base.matieres.ajouter(objet)
+        reliees = relier_activites(base, matiere)
+        message = f"Matière « {matiere.nom} » ajoutée"
+        if reliees:
+            message += f" ; {reliees} cours de l'emploi du temps lui sont maintenant rattachés"
+        return message + "."
     elif action.nom == "regenerer_planning":
         from ..ui.calendrier import enregistrer_resultat, generer
 

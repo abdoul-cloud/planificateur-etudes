@@ -143,3 +143,26 @@ def bilan(base: Base, du: date, au: date, maintenant: datetime | None = None) ->
                 resultat.non_pointe += s.minutes
     resultat.par_matiere = dict(lignes)
     return resultat
+
+
+def relier_activites(base: Base, matiere: m.Matiere | None = None) -> int:
+    """Relie à leur matière les cours (cours, TD, TP) qui n'en ont pas, d'après leur nom.
+
+    Utile quand l'emploi du temps a été importé avant de créer la matière : sans ce lien, la révision
+    « la veille du cours » ne se déclenche pas. Renvoie le nombre de cours reliés.
+    """
+    from .ia.import_edt import associer_matiere
+
+    matieres = [matiere] if matiere is not None else base.matieres.lister()
+    reliees = 0
+    for activite in base.activites.lister():
+        if activite.matiere_id is not None or activite.type not in (m.TypeActivite.COURS, m.TypeActivite.TD,
+                                                                    m.TypeActivite.TP):
+            continue
+        identifiant = associer_matiere(activite.nom, matieres)
+        if identifiant is not None:
+            activite.matiere_id = identifiant
+            base.activites.modifier(activite)
+            reliees += 1
+    return reliees
+

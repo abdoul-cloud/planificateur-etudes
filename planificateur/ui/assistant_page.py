@@ -58,6 +58,7 @@ TUILES = [
 ICONES_ACTIONS = {
     "ajouter_epreuve": "drapeau", "ajouter_travail": "travaux", "ajouter_activite": "emploi",
     "pointer_seance": "coche", "marquer_matiere_terminee": "matieres", "regenerer_planning": "generer",
+    "ajouter_matiere": "matieres",
 }
 
 

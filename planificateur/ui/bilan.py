@@ -39,7 +39,8 @@ def bornes(periode: str, aujourd_hui: date) -> tuple[date, date]:
 
 
 class BarresMatieres(QWidget):
-    """Une ligne par matière : barre du temps prévu, remplie du temps réalisé.
+    """Une ligne par matière : toutes les barres ont la même longueur (100 % du temps prévu de la matière),
+    remplies selon la part réellement faite.
 
     La couleur de la matière ne sert qu'à la marque ; noms et valeurs restent
     dans la couleur du texte. Survoler une ligne affiche le détail.
@@ -47,7 +48,7 @@ class BarresMatieres(QWidget):
 
     HAUTEUR_LIGNE = 46
     LARGEUR_NOM = 150
-    LARGEUR_VALEUR = 150
+    LARGEUR_VALEUR = 190
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -76,7 +77,6 @@ class BarresMatieres(QWidget):
                        "Aucune séance sur cette période.")
             p.end()
             return
-        maximum = max(prevu for _, _, prevu, _, _ in self.lignes) or 1
         for n, (nom, couleur, prevu, fait, manque) in enumerate(self.lignes):
             zone = self._zone_barre(n)
             centre = n * self.HAUTEUR_LIGNE + self.HAUTEUR_LIGNE / 2
@@ -86,17 +86,17 @@ class BarresMatieres(QWidget):
             p.setFont(police)
             p.drawText(QRectF(8, centre - 10, self.LARGEUR_NOM - 16, 20), Qt.AlignmentFlag.AlignVCenter,
                        mesure.elidedText(nom, Qt.TextElideMode.ElideRight, self.LARGEUR_NOM - 16))
-            # Piste du prévu, puis le réalisé par-dessus (extrémités arrondies 4 px)
-            largeur_prevu = zone.width() * prevu / maximum
+            # Piste pleine largeur pour chaque matière, remplie selon la part faite du temps prévu
+            part = min(1.0, fait / prevu) if prevu else (1.0 if fait else 0.0)
             piste = QPainterPath()
-            piste.addRoundedRect(QRectF(zone.left(), zone.top(), max(8.0, largeur_prevu), zone.height()), 4, 4)
+            piste.addRoundedRect(zone, 4, 4)
             p.fillPath(piste, QColor("#E6E8F0"))
-            if fait:
-                largeur_fait = largeur_prevu * min(1.0, fait / prevu) if prevu else 0
+            if part > 0:
                 rempli = QPainterPath()
-                rempli.addRoundedRect(QRectF(zone.left(), zone.top(), max(8.0, largeur_fait), zone.height()), 4, 4)
+                rempli.addRoundedRect(QRectF(zone.left(), zone.top(), max(8.0, zone.width() * part), zone.height()), 4, 4)
                 p.fillPath(rempli, QColor(couleur))
-            valeur = f"{texte_duree(fait)} / {texte_duree(prevu)}"
+            pourcentage = f" · {round(100 * fait / prevu)} %" if prevu else ""
+            valeur = f"{texte_duree(fait)} / {texte_duree(prevu)}{pourcentage}"
             p.setPen(QColor(theme.TEXTE_DOUX))
             p.drawText(QRectF(self.width() - self.LARGEUR_VALEUR, centre - 10, self.LARGEUR_VALEUR - 8, 20),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, valeur)
@@ -251,7 +251,7 @@ class PageBilan(QWidget):
         colonne.setContentsMargins(20, 16, 20, 16)
         titre = QLabel("Par matière")
         titre.setObjectName("titreCarte")
-        legende = QLabel("Barre claire : temps prévu · partie colorée : temps réellement fait")
+        legende = QLabel("Chaque barre représente le temps prévu pour la matière ; la partie colorée, ce qui a été fait")
         legende.setObjectName("pale")
         self.barres = BarresMatieres()
         colonne.addWidget(titre)
@@ -303,7 +303,12 @@ class PageBilan(QWidget):
 
         matieres = {x.id: x for x in self.base.matieres.lister()}
         lignes = []
-        for matiere_id, ligne in sorted(resultat.par_matiere.items(), key=lambda kv: -kv[1].prevu):
+        def nom_de(matiere_id):
+            return matieres[matiere_id].nom.lower() if matiere_id in matieres else "~"
+
+        for matiere_id, ligne in sorted(resultat.par_matiere.items(), key=lambda kv: nom_de(kv[0])):
+            if not ligne.prevu and not ligne.fait:
+                continue
             matiere = matieres.get(matiere_id)
             lignes.append((matiere.nom if matiere else "Sans matière", matiere.couleur if matiere else theme.ACCENT,
                            ligne.prevu, ligne.fait, ligne.manque))

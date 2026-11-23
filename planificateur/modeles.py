@@ -346,3 +346,19 @@ def couleur_libre(utilisees) -> str:
         if couleur.upper() not in prises:
             return couleur
     return COULEURS_MATIERES[len(prises) % len(COULEURS_MATIERES)]
+
+
+# Périodes de planification proposées (en semaines du calendrier, lundi → dimanche)
+PERIODES_PLANIFICATION = {1: "Cette semaine", 2: "2 semaines", 3: "3 semaines", 4: "4 semaines (1 mois)",
+                          8: "8 semaines (2 mois)", 12: "12 semaines (un trimestre)"}
+
+
+def fin_de_periode(jour, semaines: int):
+    """Dernier jour planifié : le dimanche de la semaine en cours, plus (semaines − 1) semaines.
+
+    Ex. : un jeudi avec 1 semaine → le dimanche qui suit ; avec 2 semaines → le dimanche d'après.
+    """
+    from datetime import timedelta
+
+    return jour + timedelta(days=6 - jour.weekday() + 7 * (max(1, semaines) - 1))
+

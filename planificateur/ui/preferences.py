@@ -228,7 +228,14 @@ class PagePreferences(QWidget):
         self.max_jour_epreuve = champ_minutes(120, 1440)
         self.libre_apres = QCheckBox("Soirée libre (rien jusqu'au lendemain)")
         self.marge = _nombre(12, 0, 168, " h")
-        self.horizon = _nombre(3, 1, 12, " semaines")
+        self.horizon = QComboBox()
+        for semaines, libelle in m.PERIODES_PLANIFICATION.items():
+            self.horizon.addItem(libelle, semaines)
+        self.horizon.setToolTip("Le planning s'arrête au dimanche de la dernière semaine choisie. Si vous recevez "
+                                "votre emploi du temps semaine par semaine, choisissez « Cette semaine ».")
+        self.fin_horizon = QLabel()
+        self.fin_horizon.setObjectName("doux")
+        self.horizon.currentIndexChanged.connect(self._afficher_fin_horizon)
         echeances = QGroupBox("Échéances et révisions")
         f = QFormLayout(echeances)
         f.addRow("Révisions régulières par semaine", self.revisions)
@@ -236,7 +243,11 @@ class PagePreferences(QWidget):
         f.addRow("Au plus, le jour d'une épreuve", self.max_jour_epreuve)
         f.addRow("Après une épreuve", self.libre_apres)
         f.addRow("Finir un travail à rendre", _avec_texte(self.marge, "avant l'échéance"))
-        f.addRow("Planifier sur", self.horizon)
+        ligne_horizon = QHBoxLayout()
+        ligne_horizon.addWidget(self.horizon)
+        ligne_horizon.addWidget(self.fin_horizon)
+        ligne_horizon.addStretch()
+        f.addRow("Planifier", ligne_horizon)
 
         # Boutons
         enregistrer = bouton_role(QPushButton(icone("coche", "#FFFFFF"), " Enregistrer"), "primaire")
@@ -334,7 +345,20 @@ class PagePreferences(QWidget):
         self.max_jour_epreuve.setValue(p.max_minutes_jour_epreuve)
         self.libre_apres.setChecked(p.libre_apres_epreuve)
         self.marge.setValue(p.marge_echeance_heures)
-        self.horizon.setValue(p.horizon_semaines)
+        index = self.horizon.findData(p.horizon_semaines)
+        if index < 0:  # valeur d'une ancienne version (ex. 5 semaines) : la plus proche proposée
+            proches = sorted(m.PERIODES_PLANIFICATION, key=lambda s: abs(s - p.horizon_semaines))
+            index = self.horizon.findData(proches[0])
+        self.horizon.setCurrentIndex(index)
+        self._afficher_fin_horizon()
+
+    def _afficher_fin_horizon(self) -> None:
+        from datetime import date
+
+        from .commun import JOURS
+
+        fin = m.fin_de_periode(date.today(), self.horizon.currentData() or 1)
+        self.fin_horizon.setText(f"jusqu'au {JOURS[fin.weekday()].lower()} {fin:%d/%m}")
 
     def lire(self) -> m.Preferences:
         if self.duree_max.value() < self.duree_min.value():
@@ -363,7 +387,7 @@ class PagePreferences(QWidget):
             remplissage_minutes=self.minutes_libres.value(),
             remplissage_espace=self.espace_libres.value(),
             marge_echeance_heures=self.marge.value(),
-            horizon_semaines=self.horizon.value(),
+            horizon_semaines=self.horizon.currentData(),
             minutes_revision_semaine=self.revisions.value(),
             repos_avant_epreuve_min=self.repos_epreuve.value(),
             max_minutes_jour_epreuve=self.max_jour_epreuve.value(),

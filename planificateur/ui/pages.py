@@ -255,6 +255,12 @@ class PageMatieres(PageListe):
     def formulaire(self, objet=None):
         return FormulaireMatiere(objet, self)
 
+    def apres_enregistrement(self, formulaire, objet) -> None:
+        from ..suivi import relier_activites
+
+        super().apres_enregistrement(formulaire, objet)
+        relier_activites(self.base, objet)  # cours importés avant la création de la matière
+
     # --- Suppression guidée ----------------------------------------------------
 
     def utilisations(self, matiere: m.Matiere) -> dict[str, int]:

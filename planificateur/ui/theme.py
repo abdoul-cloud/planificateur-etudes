@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap
-from PySide6.QtWidgets import QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
 
 IMAGES = (Path(__file__).with_name("images")).as_posix()
 
@@ -391,9 +401,30 @@ QMessageBox QLabel {{ min-width: 280px; }}
 """
 
 
+class GardeMolette(QObject):
+    """La molette ne modifie un champ (nombre, heure, date, liste) que s'il a été cliqué.
+
+    Sinon, faire défiler une page longue (Préférences…) changeait au passage les valeurs survolées.
+    La molette fait alors défiler la page, comme attendu.
+    """
+
+    def eventFilter(self, objet, evenement) -> bool:
+        if (evenement.type() == QEvent.Type.Wheel and isinstance(objet, (QAbstractSpinBox, QComboBox))
+                and not objet.hasFocus()):
+            parent = objet.parentWidget()
+            if parent is not None:
+                QApplication.sendEvent(parent, evenement)  # remonte jusqu'à la zone qui défile
+            return True
+        return False
+
+
+_garde_molette = GardeMolette()
+
+
 def appliquer_theme(application: QApplication) -> None:
     """Style Fusion + palette claire + feuille de style : rendu identique partout."""
     application.setStyle("Fusion")
+    application.installEventFilter(_garde_molette)
     palette = QPalette()
     for role, couleur in (
         (QPalette.ColorRole.Window, FOND),

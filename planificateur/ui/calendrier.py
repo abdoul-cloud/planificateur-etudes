@@ -22,6 +22,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -73,8 +74,11 @@ def generer(base: Base, maintenant: datetime | None = None) -> Resultat:
     """Calcule le planning à partir de toutes les données enregistrées."""
     maintenant = maintenant or datetime.now().replace(second=0, microsecond=0)
     preferences = base.preferences()
+    from ..suivi import relier_activites
+
+    relier_activites(base)  # cours importés avant la création de leur matière : révision la veille possible
     du = maintenant.date()
-    au = du + timedelta(weeks=preferences.horizon_semaines) - timedelta(days=1)
+    au = m.fin_de_periode(du, preferences.horizon_semaines)  # jusqu'au dimanche, semaines du calendrier
     return planifier(
         du, au, preferences,
         matieres=base.matieres.lister(),
@@ -797,7 +801,8 @@ class PagePlanning(QWidget):
             self.exporter(chemin)
 
     def choisir_export_ics(self) -> None:
-        dialogue = DialogueExportAgenda(self.base.matieres.lister(ordre="nom"), self)
+        dialogue = DialogueExportAgenda(self.base.matieres.lister(ordre="nom"), self,
+                                        self.periodes_export())
         if dialogue.exec() != QDialog.DialogCode.Accepted:
             return
         self._options_agenda = dialogue.choix()
@@ -807,13 +812,25 @@ class PagePlanning(QWidget):
         if chemin:
             self.exporter_agenda(Path(chemin).with_suffix(".ics"))
 
+    def periodes_export(self) -> list[tuple[str, date, date]]:
+        """Périodes proposées à l'export : semaine affichée (par défaut), cette semaine, toute la période planifiée."""
+        aujourd_hui = date.today()
+        fin_planifiee = m.fin_de_periode(aujourd_hui, self.base.preferences().horizon_semaines)
+        periodes = [(f"Semaine affichée ({texte_semaine(self.lundi, court=True)})", self.lundi,
+                     self.lundi + timedelta(days=6))]
+        if self.lundi != lundi_de(aujourd_hui):
+            periodes.append((f"Cette semaine ({texte_semaine(lundi_de(aujourd_hui), court=True)})", aujourd_hui,
+                             m.fin_de_periode(aujourd_hui, 1)))
+        periodes.append((f"Toute la période planifiée (jusqu'au {fin_planifiee:%d/%m})", aujourd_hui, fin_planifiee))
+        return periodes
+
     def exporter_agenda(self, chemin: Path, **options) -> int | None:
-        """Séances et épreuves d'aujourd'hui jusqu'à la fin de l'horizon de planification."""
-        options = options or getattr(self, "_options_agenda", {})
+        """Exporte la période choisie (par défaut : la semaine affichée dans le Planning)."""
+        options = dict(options or getattr(self, "_options_agenda", {}))
         from ..export_ics import exporter_ics
 
-        du = date.today()
-        au = du + timedelta(weeks=self.base.preferences().horizon_semaines)
+        _, du, au = self.periodes_export()[0]
+        du, au = options.pop("du", du), options.pop("au", au)
         try:
             nombre = exporter_ics(self.base, du, au, chemin, **options)
         except OSError as erreur:
@@ -852,15 +869,23 @@ class PagePlanning(QWidget):
 class DialogueExportAgenda(QDialog):
     """Choisir ce qui part dans l'agenda : matières, épreuves, rappels."""
 
-    def __init__(self, matieres: list[m.Matiere], parent=None) -> None:
+    def __init__(self, matieres: list[m.Matiere], parent=None, periodes=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Exporter vers un agenda")
-        aide = QLabel("Séances et épreuves d'aujourd'hui à la fin de la période planifiée. Choisissez ce qui doit "
-                      "apparaître dans votre agenda :")
+        self.periode = QComboBox()
+        for libelle, du, au in periodes or []:
+            self.periode.addItem(libelle, (du, au))
+        aide = QLabel("Choisissez ce qui doit apparaître dans votre agenda :")
         aide.setWordWrap(True)
         self.cases: dict[int, QCheckBox] = {}
         colonne = QVBoxLayout(self)
         colonne.setContentsMargins(22, 20, 22, 18)
+        if periodes:
+            ligne = QHBoxLayout()
+            ligne.addWidget(QLabel("Période :"))
+            ligne.addWidget(self.periode, 1)
+            colonne.addLayout(ligne)
+            colonne.addSpacing(6)
         colonne.addWidget(aide)
         for x in matieres:
             if x.terminee:
@@ -887,5 +912,8 @@ class DialogueExportAgenda(QDialog):
         colonne.addWidget(boutons)
 
     def choix(self) -> dict:
-        return {"matieres_choisies": {i for i, case in self.cases.items() if case.isChecked()},
-                "avec_epreuves": self.epreuves.isChecked(), "avec_alarmes": self.alarmes.isChecked()}
+        options = {"matieres_choisies": {i for i, case in self.cases.items() if case.isChecked()},
+                   "avec_epreuves": self.epreuves.isChecked(), "avec_alarmes": self.alarmes.isChecked()}
+        if self.periode.count():
+            options["du"], options["au"] = self.periode.currentData()
+        return options
