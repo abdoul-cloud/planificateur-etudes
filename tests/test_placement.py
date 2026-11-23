@@ -122,7 +122,8 @@ def test_temps_de_preparation():
 
 
 def test_epreuves_ignorees_hors_horizon_preparees_ou_passees():
-    lointaine = m.Epreuve(MATHS.id, h(MARDI + timedelta(days=7), 8), h(MARDI + timedelta(days=7), 10), id=1)
+    # Au-delà de la période + 7 jours d'anticipation
+    lointaine = m.Epreuve(MATHS.id, h(MARDI + timedelta(days=14), 8), h(MARDI + timedelta(days=14), 10), id=1)
     preparee = m.Epreuve(MATHS.id, h(JEUDI, 14), h(JEUDI, 16), etat=m.EtatEpreuve.PREPAREE, id=2)
     passee = m.Epreuve(MATHS.id, h(DIMANCHE_AVANT, 9), h(DIMANCHE_AVANT, 11), id=3)
     res = planifier(LUNDI, DIMANCHE, SANS_REVISION, MATIERES, SEMAINE, epreuves=[lointaine, preparee, passee])

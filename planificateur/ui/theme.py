@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
     QAbstractSpinBox,
     QApplication,
     QComboBox,
@@ -409,11 +410,16 @@ class GardeMolette(QObject):
     """
 
     def eventFilter(self, objet, evenement) -> bool:
-        if (evenement.type() == QEvent.Type.Wheel and isinstance(objet, (QAbstractSpinBox, QComboBox))
-                and not objet.hasFocus()):
-            parent = objet.parentWidget()
-            if parent is not None:
-                QApplication.sendEvent(parent, evenement)  # remonte jusqu'à la zone qui défile
+        if evenement.type() != QEvent.Type.Wheel or not isinstance(objet, QWidget):
+            return False
+        champ = objet if isinstance(objet, (QAbstractSpinBox, QComboBox)) else objet.parentWidget()
+        if isinstance(champ, (QAbstractSpinBox, QComboBox)) and not champ.hasFocus():
+            objet = champ
+            zone = objet.parentWidget()
+            while zone is not None and not isinstance(zone, QAbstractScrollArea):
+                zone = zone.parentWidget()
+            if zone is not None:  # la page défile à la place
+                QApplication.sendEvent(zone.verticalScrollBar(), evenement)
             return True
         return False
 

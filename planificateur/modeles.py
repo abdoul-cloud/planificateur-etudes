@@ -357,8 +357,11 @@ def fin_de_periode(jour, semaines: int):
     """Dernier jour planifié : le dimanche de la semaine en cours, plus (semaines − 1) semaines.
 
     Ex. : un jeudi avec 1 semaine → le dimanche qui suit ; avec 2 semaines → le dimanche d'après.
+    Le dimanche, la semaine qui commence le lendemain compte comme « cette semaine » (c'est souvent ce
+    jour-là qu'on reçoit ou saisit l'emploi du temps de la semaine suivante).
     """
     from datetime import timedelta
 
-    return jour + timedelta(days=6 - jour.weekday() + 7 * (max(1, semaines) - 1))
+    semaines = max(1, semaines) + (1 if jour.weekday() == 6 else 0)
+    return jour + timedelta(days=6 - jour.weekday() + 7 * (semaines - 1))
 

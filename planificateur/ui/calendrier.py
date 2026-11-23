@@ -74,9 +74,6 @@ def generer(base: Base, maintenant: datetime | None = None) -> Resultat:
     """Calcule le planning à partir de toutes les données enregistrées."""
     maintenant = maintenant or datetime.now().replace(second=0, microsecond=0)
     preferences = base.preferences()
-    from ..suivi import relier_activites
-
-    relier_activites(base)  # cours importés avant la création de leur matière : révision la veille possible
     du = maintenant.date()
     au = m.fin_de_periode(du, preferences.horizon_semaines)  # jusqu'au dimanche, semaines du calendrier
     return planifier(
@@ -689,6 +686,9 @@ class PagePlanning(QWidget):
     # --- Actions -------------------------------------------------------------
 
     def generer(self, maintenant: datetime | None = None) -> Resultat:
+        from ..suivi import relier_activites
+
+        relier_activites(self.base)  # cours importés avant leur matière : la révision de la veille devient possible
         resultat = generer(self.base, maintenant if isinstance(maintenant, datetime) else None)
         enregistrer_resultat(self.base, resultat)
         self.dernier_resultat = resultat

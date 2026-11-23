@@ -218,6 +218,9 @@ class FenetrePrincipale(QMainWindow):
         page_epreuves.actions.insertWidget(0, importer)
         page_epreuves.bouton_importer = importer
         self.pages["Assistant"].donnees_modifiees.connect(planning.signaler_changement)
+        for nom in ("Matières", "Épreuves", "Travaux à rendre", "Emploi du temps"):  # ajouts faits par l'assistant
+            if hasattr(self.pages[nom], "rafraichir"):
+                self.pages["Assistant"].donnees_modifiees.connect(self.pages[nom].rafraichir)
         self.pages["Préférences"].section_ia.reglages_changes.connect(self.pages["Assistant"].rafraichir)
 
         # Rappels : icône près de l'horloge et notifications

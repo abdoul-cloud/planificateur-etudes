@@ -171,6 +171,10 @@ class _Besoin:
     minutes: int
     importance: int
     jours_utilises: set[date] = field(default_factory=set)
+    anticipe: bool = False  # échéance juste après la période : préparée dès maintenant, sans alerte de manque
+
+
+ANTICIPATION = timedelta(days=7)  # échéances jusqu'à 7 jours après la période : leur préparation commence avant
 
 
 class _Agenda:
@@ -585,8 +589,9 @@ def planifier(
     besoins: list[_Besoin] = []
     non_places: list[Deficit] = []
 
+    fin_anticipation = fin_horizon + ANTICIPATION
     for e in epreuves:
-        if e.etat is not EtatEpreuve.A_PREPARER or not maintenant < e.debut <= fin_horizon:
+        if e.etat is not EtatEpreuve.A_PREPARER or not maintenant < e.debut <= fin_anticipation:
             continue
         liees = [s for s in conservees if s.epreuve_id == e.id]
         intitule = e.intitule or f"{e.type.value.replace('_', ' ').capitalize()} de {noms.get(e.matiere_id, '?')}"
@@ -594,7 +599,7 @@ def planifier(
             _Besoin(
                 TypeSeance.PREPARATION, e.id, e.matiere_id, intitule, e.debut,
                 max(0, minutes_preparation(e) - sum(_deja_fait(s) for s in liees)),
-                e.importance, {s.debut.date() for s in liees},
+                e.importance, {s.debut.date() for s in liees}, anticipe=e.debut > fin_horizon,
             )
         )
 
@@ -604,7 +609,7 @@ def planifier(
         limite = t.date_cible or t.echeance - timedelta(hours=preferences.marge_echeance_heures)
         if limite <= maintenant:  # marge ou date cible dépassée : on vise l'échéance
             limite = t.echeance
-        if limite > fin_horizon:
+        if limite > fin_anticipation:
             continue
         liees = [s for s in conservees if s.travail_id == t.id]
         # Prévues à venir, ou passées mais pas encore pointées (supposées faites
@@ -613,6 +618,7 @@ def planifier(
         besoin = _Besoin(
             TypeSeance.TRAVAIL, t.id, t.matiere_id, t.intitule, limite,
             max(0, t.minutes_restantes - prevu), t.importance, {s.debut.date() for s in liees},
+            anticipe=limite > fin_horizon,
         )
         if t.echeance <= maintenant:
             non_places.append(
@@ -629,7 +635,7 @@ def planifier(
     _remplir_plages_garanties(agenda, besoins, matieres, favorables, compte, du, au, maintenant)
     _occuper_moments_libres(agenda, besoins, matieres, favorables, compte, du, au, maintenant)
     for besoin in besoins:
-        if besoin.minutes:
+        if besoin.minutes and not besoin.anticipe:  # le reste d'une échéance anticipée se fera la période suivante
             non_places.append(
                 Deficit(besoin.type, besoin.reference_id, besoin.intitule, besoin.minutes, besoin.echeance)
             )

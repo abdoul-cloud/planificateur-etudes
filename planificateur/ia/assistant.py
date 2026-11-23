@@ -433,8 +433,10 @@ def appliquer(base: Base, action: Action, maintenant: datetime | None = None) ->
             message += f" ; {reliees} cours de l'emploi du temps lui sont maintenant rattachés"
         return message + "."
     elif action.nom == "regenerer_planning":
+        from ..suivi import relier_activites
         from ..ui.calendrier import enregistrer_resultat, generer
 
+        relier_activites(base)
         resultat = generer(base, maintenant)
         enregistrer_resultat(base, resultat)
         return "Planning recalculé" + ("" if resultat.faisable else " — attention, tout ne tient pas")

@@ -23,7 +23,7 @@ def base(tmp_path):
 
 def test_fin_de_periode_en_semaines_du_calendrier():
     assert m.fin_de_periode(date(2026, 11, 26), 1) == date(2026, 11, 29)  # jeudi → dimanche
-    assert m.fin_de_periode(date(2026, 11, 29), 1) == date(2026, 11, 29)  # dimanche → le jour même
+    assert m.fin_de_periode(date(2026, 11, 29), 1) == date(2026, 12, 6)  # dimanche → toute la semaine suivante
     assert m.fin_de_periode(date(2026, 11, 23), 2) == date(2026, 12, 6)
 
 
@@ -43,6 +43,21 @@ def test_planning_limite_a_la_semaine_et_nettoye(base):
     assert max(s.debut for s in base.seances.lister()).date() <= date(2026, 11, 29)
 
 
+def test_epreuve_juste_apres_la_periode_preparee_avant(base):
+    from planificateur.ui.calendrier import generer
+
+    maths = base.matieres.ajouter(m.Matiere("Maths"))
+    lundi_suivant = datetime(2026, 11, 30, 8, 0)
+    base.epreuves.ajouter(m.Epreuve(maths.id, lundi_suivant, lundi_suivant + timedelta(hours=2)))
+    preferences = base.preferences()
+    preferences.horizon_semaines = 1
+    base.enregistrer_preferences(preferences)
+    resultat = generer(base, JEUDI)
+    preparations = [s for s in resultat.seances if s.type is m.TypeSeance.PREPARATION]
+    assert preparations and all(s.debut.date() <= date(2026, 11, 29) for s in preparations)
+    assert not [d for d in resultat.non_places if d.type is m.TypeSeance.PREPARATION]  # pas de fausse alerte
+
+
 def test_molette_sans_clic_ne_change_rien(application, base):
     from PySide6.QtCore import QPoint, QPointF, Qt
     from PySide6.QtGui import QWheelEvent
@@ -54,14 +69,22 @@ def test_molette_sans_clic_ne_change_rien(application, base):
     appliquer_theme(QApplication.instance())
     page = PagePreferences(base)
     page.show()
+    from PySide6.QtWidgets import QLineEdit, QScrollArea
+
+    page.resize(900, 500)
+    QApplication.processEvents()
+    defilement = page.findChildren(QScrollArea)[0].verticalScrollBar()
+    defilement.setValue(defilement.maximum() // 2)
+    position = defilement.value()
     avant = (page.horizon.currentIndex(), page.revisions.value())
-    for champ in (page.horizon, page.revisions):
+    for champ in (page.horizon, page.revisions, page.revisions.findChild(QLineEdit)):
         for _ in range(10):
             evenement = QWheelEvent(QPointF(5, 5), QPointF(champ.mapToGlobal(QPoint(5, 5))), QPoint(0, 0),
                                     QPoint(0, -120), Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
                                     Qt.ScrollPhase.NoScrollPhase, False)
             QApplication.sendEvent(champ, evenement)
     assert (page.horizon.currentIndex(), page.revisions.value()) == avant
+    assert defilement.value() != position  # la molette fait défiler la page à la place
 
 
 def test_choix_de_la_periode_dans_les_preferences(application, base):
@@ -131,14 +154,16 @@ def test_matiere_deja_existante_refusee(base):
     assert "ajouter_matiere" in {o["name"] for o in OUTILS}
 
 
-def test_cours_relies_a_la_generation(base):
-    from planificateur.ui.calendrier import generer
+def test_cours_relies_quand_on_genere(application, base):
+    from planificateur.ui.calendrier import PagePlanning, generer
 
     base.activites.ajouter(m.ActiviteFixe("TD Physique", time(8), time(10), type=m.TypeActivite.TD,
                                           date=date(2026, 11, 27)))
     base.activites.ajouter(m.ActiviteFixe("Sport", time(18), time(19), type=m.TypeActivite.PERSONNEL, jour_semaine=1))
     physique = base.matieres.ajouter(m.Matiere("Physique"))
-    generer(base, JEUDI)
+    generer(base, JEUDI)  # calcul seul (Bilan) : ne modifie rien
+    assert all(a.matiere_id is None for a in base.activites.lister())
+    PagePlanning(base).generer(JEUDI)  # bouton « Générer le planning »
     liens = {a.nom: a.matiere_id for a in base.activites.lister()}
     assert liens == {"TD Physique": physique.id, "Sport": None}
 
@@ -158,3 +183,18 @@ def test_barres_du_bilan_par_nom(application, base):
     page = PageBilan(base)
     page.rafraichir()
     assert [ligne[0] for ligne in page.barres.lignes] == ["Alpha", "Zêta"]  # ordre alphabétique, sans « Rien »
+
+
+def test_ecrans_a_jour_apres_un_ajout_de_l_assistant(application, base):
+    from planificateur.ia.assistant import Action
+    from planificateur.ui.assistant_page import _CarteAction
+    from planificateur.ui.fenetre import FenetrePrincipale
+
+    fenetre = FenetrePrincipale(base)
+    assistant = fenetre.pages["Assistant"]
+    carte = _CarteAction(assistant, Action("ajouter_matiere", {"nom": "Automatique"}, "Ajouter la matière"))
+    assert carte.appliquer()
+    matieres = fenetre.pages["Matières"]
+    assert [x.nom for x in matieres.objets] == ["Automatique"]
+    fenetre._quitter_vraiment = True
+    fenetre.close()
